@@ -5,10 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Relative Note Sheet Music Sequencer</title>
 
-<!-- MIDI LIBRARY SCRIPTS with 'defer' to guarantee loading order -->
+<!-- MIDI LIBRARY SCRIPTS -->
 <script src="https://cdn.jsdelivr.net/npm/midi-writer-js@1.7.1/build/MidiWriter.min.js" defer></script>
-<!-- NEW: Added Tone.js MIDI parsing library for loading .mid files -->
-<script src="https://unpkg.com/@tonejs/midi"></script>
+<script src="https://unpkg.com/@tonejs/midi" defer></script>
 <!-- END MIDI LIBRARY SCRIPTS -->
 
 <style>
@@ -109,7 +108,7 @@
         padding: 5px;
         vertical-align: middle;
     }
-    #edoCustomInput, #rootNoteInput {
+    #edoCustomInput, #rootNoteInput, #totalBeats {
         width: 50px;
     }
     #canvas-container {
@@ -205,6 +204,9 @@
             <input type="range" id="vZoom" min="1" max="5" value="1.5" step="0.1">
             <label for="hZoom">H-Zoom:</label>
             <input type="range" id="hZoom" min="1" max="5" value="1" step="0.1">
+            <!-- NEW: Beats input field -->
+            <label for="totalBeats">Beats:</label>
+            <input type="number" id="totalBeats" value="16" min="4" step="4">
             <button id="beatSnapBtn">Beat Snap: Off</button>
         </div>
         <div class="control-group">
@@ -364,6 +366,7 @@
     
     // --- Musical Constants ---
     const PIXELS_PER_BEAT = 50;
+    const START_BEAT = 3; 
     const BEAT_SNAP_SUBDIVISION = 4;
     const circleRadius = 10;
     const trebleClefFrequencies = [698.46, 587.33, 493.88, 392.00, 329.63];
@@ -408,6 +411,7 @@
     const tempoInput = document.getElementById('tempo');
     const vZoomSlider = document.getElementById('vZoom');
     const hZoomSlider = document.getElementById('hZoom');
+    const totalBeatsInput = document.getElementById('totalBeats'); // NEW
     const volumeSlider = document.getElementById('volume');
     const themeSelect = document.getElementById('themeSelect');
     const edo12SnapBtn = document.getElementById('edo12SnapBtn');
@@ -453,11 +457,13 @@
 
     // --- Core Functions ---
     function init() {
-        canvas.width = canvasContainer.clientWidth;
+        // canvas.width is set by updateCanvasWidth
         canvas.height = 1000;
         document.getElementById('adjustMode').checked = false;
         document.getElementById('insertMode').checked = true;
         
+        playheadPosition = START_BEAT * PIXELS_PER_BEAT;
+
         Object.keys(SCALES).forEach(scaleName => {
             const option = document.createElement('option');
             option.value = scaleName;
@@ -496,6 +502,7 @@
         reverbAmountSlider.value = 1.0;
         
         updateSnapButtons();
+        updateCanvasWidth(); // NEW: Set initial canvas width
 
         applyTheme(themeSelect.value);
         setupAudio();
@@ -807,7 +814,7 @@
         volumeSlider.addEventListener('input', e => { if(masterGain) masterGain.gain.value = e.target.value; });
         vZoomSlider.addEventListener('input', e => { verticalZoom = parseFloat(e.target.value); draw(); });
         hZoomSlider.addEventListener('input', handleHorizontalZoom);
-        themeSelect.addEventListener('change', e => applyTheme(e.target.value));
+        totalBeatsInput.addEventListener('change', handleBeatsInputChange); // NEW
         
         edo12SnapBtn.addEventListener('click', () => handleEdoSnap(12));
         edo24SnapBtn.addEventListener('click', () => handleEdoSnap(24));
@@ -846,7 +853,7 @@
             if (e.key === 'f') document.getElementById('movePlayheadMode').click();
             if (e.key === 'r') document.getElementById('insertChordMode').click();
             if (e.key === 'w') {
-                playheadPosition = 0;
+                playheadPosition = START_BEAT * PIXELS_PER_BEAT;
                 draw();
             }
             if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); togglePlay(); }
@@ -881,7 +888,6 @@
         midiInSelect.addEventListener('change', setMidiInput);
         midiOutSelect.addEventListener('change', setMidiOutput);
 
-        // MODIFIED: Connect buttons to the implemented MIDI functions
         saveMidiBtn.addEventListener('click', () => exportToMidiFile(circles, tempo));
         loadMidiBtn.addEventListener('click', () => midiFileInput.click());
         midiFileInput.addEventListener('change', async (e) => {
@@ -927,9 +933,11 @@
     
     function onMidiMessage(event) {
         const command = event.data[0] >> 4, note = event.data[1], velocity = event.data[2] || 0;
-        if (command === 9 && velocity > 0) {
+        
+        const currentBeatPosition = playheadPosition / (PIXELS_PER_BEAT * horizontalZoom);
+        if (command === 9 && velocity > 0 && currentBeatPosition >= START_BEAT) {
             circleCounter++;
-            let relativeX = playheadPosition / (PIXELS_PER_BEAT * horizontalZoom);
+            let relativeX = currentBeatPosition;
             if(isBeatSnapOn) relativeX = Math.round(relativeX * BEAT_SNAP_SUBDIVISION) / BEAT_SNAP_SUBDIVISION;
 
             const initialLengthInBeats = parseFloat(initialNoteLengthSelect.value);
@@ -975,8 +983,16 @@
                     tempo = data.tempo;
                     circleCounter = data.circleCounter || Math.max(0, ...data.circles.map(c => c.id));
                     tempoInput.value = tempo;
-                    isPlaying = false; playBtn.textContent = 'Play'; playheadPosition = 0;
-                    handleHorizontalZoom({target: {value: hZoomSlider.value}});
+                    isPlaying = false; 
+                    playBtn.textContent = 'Play'; 
+                    playheadPosition = START_BEAT * PIXELS_PER_BEAT;
+
+                    // NEW: Update beats input based on loaded file content
+                    const maxNoteBeat = circles.length > 0 ? Math.max(...circles.map(c => c.relativeX)) : START_BEAT;
+                    const requiredBeats = Math.ceil(maxNoteBeat) - START_BEAT;
+                    totalBeatsInput.value = Math.max(4, Math.ceil(requiredBeats / 4) * 4);
+                    
+                    updateCanvasWidth();
                     draw();
                 } else alert("Invalid project file format.");
             } catch (error) { alert("Could not parse file."); console.error(error); }
@@ -1007,43 +1023,36 @@
         soundFileInput.value = '';
     }
 
-    // NEW: Function to export the current project to a .mid file.
     function exportToMidiFile(circlesToExport, currentTempo) {
-        if (typeof MidiWriter === 'undefined') {
+        if (typeof window.MidiWriter === 'undefined') {
             alert("MIDI Writer library is not loaded yet. Please wait a moment and try again.");
             return;
         }
-        // Initialize the MIDI writer and a new track
-        const writer = new MidiWriter.Writer();
-        const track = new MidiWriter.Track();
+        const writer = new window.MidiWriter.Writer();
+        const track = new window.MidiWriter.Track();
         writer.addTrack(track);
 
-        // Set the tempo for the track
         track.setTempo(currentTempo);
 
-        // The default Ticks Per Quarter Note (TPQN) in midi-writer-js is 128
         const TPQN = 128;
 
-        // Add each circle as a note event to the track
         circlesToExport.forEach(circle => {
-            // Calculate the start time in MIDI ticks from the note's beat position
-            const startTick = Math.round(circle.relativeX * TPQN);
+            const startTick = Math.round((circle.relativeX - START_BEAT) * TPQN);
             
-            // Calculate the duration in beats, then convert to MIDI ticks
-            const durationInBeats = (circle.playLength * currentTempo) / 60;
-            const durationTicks = Math.round(durationInBeats * TPQN);
+            if (startTick >= 0) {
+                const durationInBeats = (circle.playLength * currentTempo) / 60;
+                const durationTicks = Math.round(durationInBeats * TPQN);
 
-            // Create the note event
-            const noteEvent = new MidiWriter.NoteEvent({
-                pitch: [frequencyToMidiNote(circle.frequency)],
-                startTick: startTick,
-                duration: 'T' + durationTicks, // 'T' prefix specifies duration in ticks
-                velocity: circle.velocity // Velocity is already 0-127
-            });
-            track.addEvent(noteEvent);
+                const noteEvent = new window.MidiWriter.NoteEvent({
+                    pitch: [frequencyToMidiNote(circle.frequency)],
+                    startTick: startTick,
+                    duration: 'T' + durationTicks,
+                    velocity: circle.velocity
+                });
+                track.addEvent(noteEvent);
+            }
         });
 
-        // Generate the MIDI file as a data URI and trigger a download
         const dataUri = writer.dataUri();
         const a = document.createElement('a');
         a.href = dataUri;
@@ -1052,37 +1061,28 @@
         URL.revokeObjectURL(a.href);
     }
 
-    // NEW: Function to parse a .mid file and load it into the project.
     async function importFromMidiFile(file, callback) {
         if (!file) return;
-        if (typeof Midi === 'undefined') {
+        if (typeof window.Midi === 'undefined') {
             alert("MIDI parsing library is not loaded yet. Please wait a moment and try again.");
             return;
         }
         try {
-            // Read the file as a binary buffer
             const arrayBuffer = await file.arrayBuffer();
-            // Parse the buffer using the @tonejs/midi library
-            const midi = new Midi(arrayBuffer);
+            const midi = new window.Midi(arrayBuffer);
 
-            // Extract the tempo from the MIDI file's header (or default to 120)
             const newTempo = midi.header.tempos[0]?.bpm || 120;
             const newCircles = [];
             let newCircleCounter = 0;
 
-            // Iterate over each track and each note in the track
             midi.tracks.forEach(track => {
                 track.notes.forEach(note => {
                     newCircleCounter++;
                     const newCircle = {
                         id: newCircleCounter,
-                        // `note.time` is in seconds. Convert it to beats for our internal format.
-                        relativeX: note.time * (newTempo / 60),
-                        // Convert the MIDI pitch number to frequency.
+                        relativeX: (note.time * (newTempo / 60)) + START_BEAT,
                         frequency: midiNoteToFrequency(note.midi),
-                        // `note.duration` is already in seconds.
                         playLength: note.duration,
-                        // `note.velocity` is 0-1. Convert to 0-127.
                         velocity: Math.round(note.velocity * 127),
                         playedThisCycle: false,
                         colliding: false
@@ -1091,7 +1091,6 @@
                 });
             });
             
-            // Pass the parsed data to the callback function
             callback({
                 circles: newCircles,
                 tempo: newTempo,
@@ -1112,8 +1111,14 @@
             tempoInput.value = tempo;
             isPlaying = false;
             playBtn.textContent = 'Play';
-            playheadPosition = 0;
-            handleHorizontalZoom({target: {value: hZoomSlider.value}});
+            playheadPosition = START_BEAT * PIXELS_PER_BEAT;
+
+            // NEW: Update beats input based on loaded file content
+            const maxNoteBeat = circles.length > 0 ? Math.max(...circles.map(c => c.relativeX)) : START_BEAT;
+            const requiredBeats = Math.ceil(maxNoteBeat) - START_BEAT;
+            totalBeatsInput.value = Math.max(4, Math.ceil(requiredBeats / 4) * 4);
+
+            updateCanvasWidth();
             draw();
         }
         midiFileInput.value = '';
@@ -1122,8 +1127,14 @@
     // --- Mouse & UI Handlers ---
     function handleMouseDown(e) {
         const pos = getEventPos(e);
-        const clickedCircle = getCircleAtPos(pos);
 
+        if (pos.x < START_BEAT * PIXELS_PER_BEAT * horizontalZoom) {
+            selectedCircle = null;
+            draw();
+            return;
+        }
+
+        const clickedCircle = getCircleAtPos(pos);
         selectedCircle = clickedCircle ? clickedCircle : null;
         
         if (currentMode === 'insert') {
@@ -1140,7 +1151,7 @@
         } else if (currentMode === 'edit') {
             if (clickedCircle) openModal(clickedCircle);
         } else if (currentMode === 'move_playhead') {
-            playheadPosition = pos.x;
+            playheadPosition = Math.max(START_BEAT * PIXELS_PER_BEAT, pos.x);
         }
         draw();
     }
@@ -1156,6 +1167,9 @@
 
         if (isDragging && selectedCircle) {
             let newRelativeX = (pos.x + dragOffsetX) / (PIXELS_PER_BEAT * horizontalZoom);
+            const maxBeat = START_BEAT + parseInt(totalBeatsInput.value, 10);
+            newRelativeX = Math.min(maxBeat, Math.max(START_BEAT, newRelativeX)); // Clamp within bounds
+
             if (isBeatSnapOn) {
                 newRelativeX = Math.round(newRelativeX * BEAT_SNAP_SUBDIVISION) / BEAT_SNAP_SUBDIVISION;
             }
@@ -1172,20 +1186,50 @@
             circles = [];
             circleCounter = 0;
             selectedCircle = null;
-            playheadPosition = 0;
+            playheadPosition = START_BEAT * PIXELS_PER_BEAT;
             draw();
         }
     }
 
+    // MODIFIED: This function is now just a wrapper for the new updateCanvasWidth function.
     function handleHorizontalZoom(e) {
         horizontalZoom = parseFloat(e.target.value);
-        let max_x = Math.max(0, ...circles.map(c => {
-            const pixelsPerSecond = (tempo / 60) * PIXELS_PER_BEAT * horizontalZoom;
-            const lineLength = c.playLength * pixelsPerSecond;
-            return (c.relativeX * PIXELS_PER_BEAT * horizontalZoom) + lineLength;
-        }));
-        canvas.width = Math.max(canvasContainer.clientWidth, max_x + 50);
+        updateCanvasWidth();
         draw();
+    }
+
+    // NEW: Handles resizing the canvas when the Beats input changes.
+    function handleBeatsInputChange(e) {
+        const newBeats = parseInt(e.target.value, 10);
+        if (isNaN(newBeats) || newBeats < 4) {
+            e.target.value = 4; // Enforce minimum
+        }
+        
+        const maxBeat = START_BEAT + newBeats;
+        const outOfBoundsNotes = circles.filter(c => c.relativeX > maxBeat);
+
+        if (outOfBoundsNotes.length > 0) {
+            if (confirm("This will delete notes outside the new range. Continue?")) {
+                circles = circles.filter(c => c.relativeX <= maxBeat);
+            } else {
+                // Revert the input value if user cancels
+                const maxNoteBeat = circles.length > 0 ? Math.max(...circles.map(c => c.relativeX)) : START_BEAT;
+                const requiredBeats = Math.ceil(maxNoteBeat) - START_BEAT;
+                e.target.value = Math.max(4, Math.ceil(requiredBeats / 4) * 4);
+                return;
+            }
+        }
+
+        updateCanvasWidth();
+        draw();
+    }
+    
+    // NEW: Centralized function to set the canvas width based on total beats and zoom.
+    function updateCanvasWidth() {
+        const totalBeats = parseInt(totalBeatsInput.value, 10) || 16;
+        // The canvas needs to be wide enough for the start offset plus the user-defined beats.
+        const calculatedWidth = (totalBeats + START_BEAT) * PIXELS_PER_BEAT * horizontalZoom;
+        canvas.width = Math.max(canvasContainer.clientWidth, calculatedWidth);
     }
     
     function togglePlay() {
@@ -1194,7 +1238,9 @@
         isPlaying = !isPlaying;
         if (isPlaying) {
             playBtn.textContent = 'Pause';
-            if (playheadPosition >= canvas.width) playheadPosition = 0;
+            if (playheadPosition >= canvas.width) {
+                playheadPosition = START_BEAT * PIXELS_PER_BEAT;
+            }
             lastTime = performance.now();
             requestAnimationFrame(gameLoop);
         } else {
@@ -1241,8 +1287,13 @@
     }
     
     function addCircle(pos) {
-        circleCounter++;
         let relativeX = pos.x / (PIXELS_PER_BEAT * horizontalZoom);
+        
+        // Prevent adding notes before start beat or after end beat
+        const maxBeat = START_BEAT + parseInt(totalBeatsInput.value, 10);
+        if (relativeX < START_BEAT || relativeX > maxBeat) return;
+
+        circleCounter++;
         if (isBeatSnapOn) {
             relativeX = Math.round(relativeX * BEAT_SNAP_SUBDIVISION) / BEAT_SNAP_SUBDIVISION;
         }
@@ -1255,17 +1306,21 @@
             frequency: yToFrequency(pos.y), playLength: playLength, velocity: 100,
             playedThisCycle: false, colliding: false
         });
-        handleHorizontalZoom({target: {value: hZoomSlider.value}});
         draw();
     }
     
     function addChord(pos) {
+        let relativeX = pos.x / (PIXELS_PER_BEAT * horizontalZoom);
+
+        const maxBeat = START_BEAT + parseInt(totalBeatsInput.value, 10);
+        if (relativeX < START_BEAT || relativeX > maxBeat) return;
+
         const chordType = chordTypeSelect.value;
         const arpBeats = parseFloat(arpBeatsInput.value);
         const numNotes = chordType === 'Triad' ? 3 : 4;
         
         const rootFreq = yToFrequency(pos.y);
-        let relativeX = pos.x / (PIXELS_PER_BEAT * horizontalZoom);
+        
         if (isBeatSnapOn) {
             relativeX = Math.round(relativeX * BEAT_SNAP_SUBDIVISION) / BEAT_SNAP_SUBDIVISION;
         }
@@ -1292,6 +1347,12 @@
         const playLength = (initialLengthInBeats * 60) / tempo;
         
         for (let i = 0; i < numNotes; i++) {
+            const arpOffset = i * arpBeats;
+            const notePosition = relativeX + arpOffset;
+
+            // Do not add chord notes that would fall out of bounds
+            if (notePosition > maxBeat) continue;
+
             circleCounter++;
             
             const scaleDegree = (rootDegreeIndex + (i * 2)) % scale.length;
@@ -1300,11 +1361,9 @@
             const noteMidi = clickedMidi + (scale[scaleDegree] - scale[rootDegreeIndex]) + (octaveOffset * 12);
             const noteFreq = midiNoteToFrequency(noteMidi);
             
-            const arpOffset = i * arpBeats;
-
             circles.push({
                 id: circleCounter,
-                relativeX: relativeX + arpOffset,
+                relativeX: notePosition,
                 frequency: noteFreq,
                 playLength: playLength,
                 velocity: 100,
@@ -1312,8 +1371,6 @@
                 colliding: false
             });
         }
-
-        handleHorizontalZoom({ target: { value: hZoomSlider.value } });
         draw();
     }
 
@@ -1327,7 +1384,7 @@
         selectedCircle = circle;
         modal.style.display = 'block';
         document.getElementById('modal-note-number').textContent = circle.id;
-        document.getElementById('modal-horizontal-pos').value = circle.relativeX.toFixed(2);
+        document.getElementById('modal-horizontal-pos').value = (circle.relativeX - START_BEAT).toFixed(2);
         document.getElementById('modal-frequency').value = circle.frequency.toFixed(4);
         modalPlayLengthInput.value = circle.playLength.toFixed(2);
         document.getElementById('modal-velocity').value = circle.velocity;
@@ -1377,9 +1434,18 @@
         const baseNoteIdInput = document.getElementById('modal-base-note').value;
         const relIntervalInput = document.getElementById('modal-relative-interval').value;
 
-        let newHPos = parseFloat(hPosInput.value);
-        if (isNaN(newHPos) || newHPos < 0) { alert("Invalid Horizontal Position."); return; }
+        let displayHPos = parseFloat(hPosInput.value);
+        if (isNaN(displayHPos) || displayHPos < 0) { alert("Invalid Horizontal Position (must be 0 or greater)."); return; }
+        
+        let newHPos = displayHPos + START_BEAT;
+        
         if (isBeatSnapOn) newHPos = Math.round(newHPos * BEAT_SNAP_SUBDIVISION) / BEAT_SNAP_SUBDIVISION;
+        
+        const maxBeat = START_BEAT + parseInt(totalBeatsInput.value, 10);
+        if (newHPos > maxBeat) {
+            alert(`Position cannot be greater than the total beats (${totalBeatsInput.value}).`);
+            return;
+        }
         selectedCircle.relativeX = newHPos;
         
         const newPlayLength = parseFloat(modalPlayLengthInput.value);
@@ -1420,14 +1486,13 @@
              selectedCircle.frequency = targetFreq;
         }
         
-        document.getElementById('modal-horizontal-pos').value = selectedCircle.relativeX.toFixed(2);
+        document.getElementById('modal-horizontal-pos').value = (selectedCircle.relativeX - START_BEAT).toFixed(2);
         document.getElementById('modal-frequency').value = selectedCircle.frequency.toFixed(4);
         modalPlayLengthInput.value = selectedCircle.playLength.toFixed(2);
         document.getElementById('modal-velocity').value = selectedCircle.velocity;
         document.getElementById('modal-base-note').value = '';
         document.getElementById('modal-relative-interval').value = '';
         
-        handleHorizontalZoom({target: {value: hZoomSlider.value}});
         draw();
     }
     
@@ -1559,7 +1624,6 @@
         const newLengthInBeats = NOTE_DURATIONS_IN_BEATS[nextIndex];
         note.playLength = (newLengthInBeats * 60) / tempo;
         
-        handleHorizontalZoom({target: {value: hZoomSlider.value}});
         draw();
     }
 
@@ -1623,7 +1687,7 @@
     function frequencyToMidiNote(freq) { return Math.round(69 + 12 * Math.log2(freq / 440)); }
 
     // --- Let's Go! ---
-    window.addEventListener('DOMContentLoaded', (event) => {
+    window.addEventListener('load', (event) => {
         init();
     });
 </script>
