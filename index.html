@@ -141,7 +141,7 @@
         border-top-right-radius: 10px;
     }
     .modal-content label { display: block; margin-top: 10px; }
-    .modal-content input { width: 95%; padding: 8px; margin-top: 5px; }
+    .modal-content input, .modal-content select { width: 95%; padding: 8px; margin-top: 5px; }
     .close-button { color: #fff; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
     .info-text { font-size: 12px; color: #555; margin: 0; }
 </style>
@@ -167,6 +167,8 @@
             <label for="editMode">Edit (e)</label>
             <input type="radio" id="movePlayheadMode" name="mode" value="move_playhead">
             <label for="movePlayheadMode">Move Playhead (f)</label>
+            <input type="radio" id="insertChordMode" name="mode" value="insert_chord">
+            <label for="insertChordMode">Insert Chord (r)</label>
         </div>
         <div class="control-group">
             <button id="playBtn">Play</button>
@@ -190,12 +192,35 @@
                 <option value="sharps">Sharps</option>
                 <option value="demisharps">Demisharps</option>
             </select>
+            <label for="initialNoteLength">Initial Note Length:</label>
+            <select id="initialNoteLength">
+                <option value="4">Whole Note</option>
+                <option value="2">Half Note</option>
+                <option value="1" selected>Quarter Note</option>
+                <option value="0.5">Eighth Note</option>
+                <option value="0.25">Sixteenth Note</option>
+            </select>
             <br><br>
             <label for="vZoom">V-Zoom:</label>
             <input type="range" id="vZoom" min="1" max="5" value="1.5" step="0.1">
             <label for="hZoom">H-Zoom:</label>
             <input type="range" id="hZoom" min="1" max="5" value="1" step="0.1">
             <button id="beatSnapBtn">Beat Snap: Off</button>
+        </div>
+        <div class="control-group">
+             <button id="reverbBtn">Reverb: Off</button>
+             <label for="reverbAmount">Reverb Amount:</label>
+             <input type="range" id="reverbAmount" min="0" max="1" value="0.5" step="0.01">
+        </div>
+        <!-- NEW: Delay Controls -->
+        <div class="control-group">
+            <button id="delayBtn">Delay: Off</button>
+            <label for="delayTime">Delay Time (s):</label>
+            <input type="range" id="delayTime" min="0.01" max="2" value="0.5" step="0.01">
+            <label for="delayFeedback">Feedback:</label>
+            <input type="range" id="delayFeedback" min="0" max="0.9" value="0.4" step="0.01">
+            <label for="delayMix">Mix:</label>
+            <input type="range" id="delayMix" min="0" max="1" value="0.5" step="0.01">
         </div>
         <div class="control-group">
             <button id="edo12SnapBtn">12-EDO</button>
@@ -210,10 +235,15 @@
             <label for="rootNoteInput">Root:</label>
             <input type="text" id="rootNoteInput" value="C4">
         </div>
+         <!-- NEW: Chord Controls -->
         <div class="control-group">
-             <button id="reverbBtn">Reverb: Off</button>
-             <label for="reverbAmount">Reverb Amount:</label>
-             <input type="range" id="reverbAmount" min="0" max="1" value="0.5" step="0.01">
+            <label for="chordType">Chord Type:</label>
+            <select id="chordType">
+                <option value="Triad">Triad</option>
+                <option value="Seventh">Seventh</option>
+            </select>
+            <label for="arpBeats">Arp Beats:</label>
+            <input type="number" id="arpBeats" value="0" step="0.125">
         </div>
         <div class="control-group">
             <button id="loadSoundBtn" class="secondary">Load Sound File</button>
@@ -224,6 +254,7 @@
         <div class="control-group">
             <button id="saveFileBtn" class="secondary">Save to File</button>
             <button id="loadFileBtn" class="secondary">Load from File</button>
+            <button id="clearAllBtn" class="secondary">Clear All</button> <!-- NEW: Clear All Button -->
             <input type="file" id="fileInput" accept=".json" style="display: none;">
         </div>
          <div class="control-group">
@@ -237,7 +268,7 @@
             <input type="file" id="midiFileInput" accept=".mid,.midi" style="display: none;">
         </div>
         <div class="control-group">
-            <p class="info-text"><b>Keyboard Shortcuts:</b> <b>Space</b> = Play/Pause | <b>w</b> = Rewind | <b>q</b> = Cycle Note Length | <b>e</b> = Edit Note | <b>+/-</b> = Adjust Velocity</p>
+            <p class="info-text"><b>Keyboard Shortcuts:</b> <b>Space</b> = Play/Pause | <b>w</b> = Rewind | <b>q</b> = Cycle Note Length | <b>e</b> = Edit Note | <b>r</b> = Insert Chord | <b>+/-</b> = Adjust Velocity</p>
         </div>
     </div>
 </div>
@@ -257,8 +288,19 @@
         <label for="modal-horizontal-pos">Horizontal Position (beats):</label>
         <input type="number" id="modal-horizontal-pos" step="0.01">
         
+        <!-- NEW: Note Length Dropdown in Modal -->
+        <label for="modal-note-length-select">Note Length:</label>
+        <select id="modal-note-length-select">
+            <option value="4">Whole Note</option>
+            <option value="2">Half Note</option>
+            <option value="1">Quarter Note</option>
+            <option value="0.5">Eighth Note</option>
+            <option value="0.25">Sixteenth Note</option>
+            <option value="custom">Custom</option>
+        </select>
+        
         <label for="modal-play-length">Play Length (seconds):</label>
-        <input type="number" id="modal-play-length" value="0.5" step="0.1">
+        <input type="number" id="modal-play-length" step="0.01">
 
         <label for="modal-velocity">Velocity (0-127):</label>
         <input type="number" id="modal-velocity" min="0" max="127">
@@ -305,6 +347,8 @@
     // --- Audio & MIDI State ---
     let audioContext;
     let masterGain, dryGain, wetGain, convolver;
+    // NEW: Delay audio nodes
+    let delay, delayFeedback, delayWetGain, delayDryGain;
     let midiAccess;
     let activeMidiInput = null;
     let activeMidiOutput = null;
@@ -380,8 +424,10 @@
     const rootNoteInput = document.getElementById('rootNoteInput');
     const modeRadios = document.querySelectorAll('input[name="mode"]');
     const noteDisplayModeSelect = document.getElementById('noteDisplayMode');
+    const initialNoteLengthSelect = document.getElementById('initialNoteLength'); // NEW
     const saveFileBtn = document.getElementById('saveFileBtn');
     const loadFileBtn = document.getElementById('loadFileBtn');
+    const clearAllBtn = document.getElementById('clearAllBtn'); // NEW
     const fileInput = document.getElementById('fileInput');
     const loadSoundBtn = document.getElementById('loadSoundBtn');
     const soundFileInput = document.getElementById('soundFileInput');
@@ -393,12 +439,23 @@
     const midiFileInput = document.getElementById('midiFileInput');
     const reverbBtn = document.getElementById('reverbBtn');
     const reverbAmountSlider = document.getElementById('reverbAmount');
+    // NEW: Delay element references
+    const delayBtn = document.getElementById('delayBtn');
+    const delayTimeSlider = document.getElementById('delayTime');
+    const delayFeedbackSlider = document.getElementById('delayFeedback');
+    const delayMixSlider = document.getElementById('delayMix');
+    // NEW: Chord element references
+    const chordTypeSelect = document.getElementById('chordType');
+    const arpBeatsInput = document.getElementById('arpBeats');
     const collapseBtn = document.getElementById('collapseBtn');
     const controlsContent = document.getElementById('controls-content');
     const modal = document.getElementById('modal');
     const modalHeader = document.getElementById('modal-header');
     const closeModalBtn = document.querySelector('.close-button');
     const applyModalBtn = document.getElementById('apply-modal-changes');
+    // NEW: Modal note length dropdown reference
+    const modalNoteLengthSelect = document.getElementById('modal-note-length-select');
+    const modalPlayLengthInput = document.getElementById('modal-play-length');
 
 
     // --- Core Functions ---
@@ -442,12 +499,19 @@
         baseFrequency = parseFloat(baseFreqInput.value);
         activeScale = scaleSelect.value;
         activeRootNote = rootNoteInput.value;
+        
+        // MODIFIED: Set reverb to be on and max by default
+        reverbAmountSlider.value = 1.0;
+        
         updateSnapButtons();
 
         applyTheme(themeSelect.value);
         setupAudio();
         initMidi();
         addEventListeners();
+        
+        // MODIFIED: Call toggleReverb to set the initial 'On' state visually
+        toggleReverb();
     }
 
     async function setupAudio() {
@@ -457,8 +521,12 @@
             dryGain = audioContext.createGain();
             wetGain = audioContext.createGain();
             convolver = audioContext.createConvolver();
+            
+            // NEW: Setup for the Delay effect
+            setupDelay();
 
             masterGain.gain.value = volumeSlider.value;
+            // The main dry signal path connects to the master gain
             dryGain.connect(masterGain);
             masterGain.connect(audioContext.destination);
 
@@ -483,6 +551,33 @@
         }
     }
     
+    // NEW: Function to initialize the delay audio nodes
+    function setupDelay() {
+        // Create the necessary nodes for a delay with feedback
+        delay = audioContext.createDelay(5.0); // Max delay time of 5s
+        delayFeedback = audioContext.createGain();
+        delayWetGain = audioContext.createGain();
+        delayDryGain = audioContext.createGain();
+
+        // Set initial values from sliders
+        delay.delayTime.value = delayTimeSlider.value;
+        delayFeedback.gain.value = delayFeedbackSlider.value;
+        delayWetGain.gain.value = delayMixSlider.value;
+        delayDryGain.gain.value = 1.0 - delayMixSlider.value;
+
+        // Create the feedback loop: output of delay goes to feedback gain, which goes back into the delay
+        delay.connect(delayFeedback);
+        delayFeedback.connect(delay);
+
+        // Route the output of the delay to the wet gain control
+        delay.connect(delayWetGain);
+
+        // The wet gain (delayed signal) connects to the master output
+        delayWetGain.connect(masterGain);
+        // The dry gain also connects to the master output
+        delayDryGain.connect(masterGain);
+    }
+    
     function playSound(frequency, playLength, velocity) {
         if (!audioContext || roundRobinBuffers.length === 0) return;
         if (audioContext.state === 'suspended') audioContext.resume();
@@ -490,10 +585,16 @@
         const bufferToPlay = roundRobinBuffers[roundRobinIndex];
         roundRobinIndex = (roundRobinIndex + 1) % roundRobinBuffers.length;
         
+        // This gain node controls the volume of a single note
         const noteGain = audioContext.createGain();
         noteGain.gain.value = (velocity / 127) * (velocity / 127);
+        
+        // The note connects to the main dry path and the reverb path
         noteGain.connect(dryGain);
         noteGain.connect(wetGain);
+        // NEW: The note also connects to the delay's dry/wet routing
+        noteGain.connect(delayDryGain);
+        noteGain.connect(delay);
 
         const source = audioContext.createBufferSource();
         source.buffer = bufferToPlay;
@@ -530,6 +631,7 @@
                 const rawMidi = frequencyToMidiNote(freq);
                 const intervals = scaleIntervals[activeScale];
                 const scaleNotes = [];
+                // Generate notes for the scale across multiple octaves
                 for (let octave = -5; octave <= 5; octave++) {
                     intervals.forEach(interval => {
                         scaleNotes.push(rootMidi + (octave * 12) + interval);
@@ -537,6 +639,7 @@
                 }
                 let closestNote = scaleNotes[0];
                 let minDistance = Infinity;
+                // Find the closest note in the scale to the clicked frequency
                 scaleNotes.forEach(note => {
                     const distance = Math.abs(rawMidi - note);
                     if (distance < minDistance) {
@@ -748,6 +851,17 @@
         reverbBtn.addEventListener('click', toggleReverb);
         reverbAmountSlider.addEventListener('input', e => { if (wetGain) wetGain.gain.value = parseFloat(e.target.value); });
         
+        // NEW: Delay event listeners
+        delayBtn.addEventListener('click', toggleDelay);
+        delayTimeSlider.addEventListener('input', e => { if(delay) delay.delayTime.value = parseFloat(e.target.value); });
+        delayFeedbackSlider.addEventListener('input', e => { if(delayFeedback) delayFeedback.gain.value = parseFloat(e.target.value); });
+        delayMixSlider.addEventListener('input', e => {
+            if(delayWetGain && delayDryGain) {
+                delayWetGain.gain.value = parseFloat(e.target.value);
+                delayDryGain.gain.value = 1.0 - parseFloat(e.target.value);
+            }
+        });
+        
         document.addEventListener('keydown', e => {
             if (e.target.tagName.toLowerCase() === 'input' || e.target.tagName.toLowerCase() === 'select') return;
             if (e.key === 'a') document.getElementById('adjustMode').click();
@@ -755,6 +869,7 @@
             if (e.key === 'd') document.getElementById('deleteMode').click();
             if (e.key === 'e') document.getElementById('editMode').click();
             if (e.key === 'f') document.getElementById('movePlayheadMode').click();
+            if (e.key === 'r') document.getElementById('insertChordMode').click(); // NEW
             if (e.key === 'w') {
                 playheadPosition = 0;
                 draw();
@@ -782,6 +897,7 @@
         saveFileBtn.addEventListener('click', saveProjectToFile);
         loadFileBtn.addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', loadProjectFromFile);
+        clearAllBtn.addEventListener('click', handleClearAll); // NEW
 
         loadSoundBtn.addEventListener('click', () => soundFileInput.click());
         soundFileInput.addEventListener('change', loadNewSoundFile);
@@ -796,6 +912,11 @@
 
         closeModalBtn.addEventListener('click', () => modal.style.display = 'none');
         applyModalBtn.addEventListener('click', applyModalChanges);
+        
+        // NEW: Event listeners to sync modal note length controls
+        modalNoteLengthSelect.addEventListener('change', updatePlayLengthFromModalSelect);
+        modalPlayLengthInput.addEventListener('input', updateModalSelectFromPlayLength);
+        
         makeModalDraggable(modal, modalHeader);
     }
 
@@ -832,9 +953,12 @@
             let relativeX = playheadPosition / (PIXELS_PER_BEAT * horizontalZoom);
             if(isBeatSnapOn) relativeX = Math.round(relativeX * BEAT_SNAP_SUBDIVISION) / BEAT_SNAP_SUBDIVISION;
 
+            const initialLengthInBeats = parseFloat(initialNoteLengthSelect.value);
+            const playLength = (initialLengthInBeats * 60) / tempo;
+
             circles.push({
                 id: circleCounter, relativeX: relativeX,
-                frequency: midiNoteToFrequency(note), playLength: 0.5, velocity: velocity,
+                frequency: midiNoteToFrequency(note), playLength: playLength, velocity: velocity,
                 playedThisCycle: false, colliding: false,
             });
             draw();
@@ -928,6 +1052,8 @@
         
         if (currentMode === 'insert') {
             if (!clickedCircle) addCircle(pos);
+        } else if (currentMode === 'insert_chord') { // NEW: Handle chord insertion
+             if (!clickedCircle) addChord(pos);
         } else if (currentMode === 'delete') {
             if (clickedCircle) deleteCircle(clickedCircle);
         } else if (currentMode === 'adjust') {
@@ -964,6 +1090,18 @@
     }
 
     function handleMouseUp() { if (isDragging) { isDragging = false; } }
+    
+    // NEW: Function to handle the "Clear All" button
+    function handleClearAll() {
+        // Use a simple confirm dialog for the prompt
+        if (confirm("Do you really want to clear all the notes?")) {
+            circles = []; // Empty the array of notes
+            circleCounter = 0; // Reset the counter
+            selectedCircle = null; // De-select any selected note
+            playheadPosition = 0; // Reset playhead
+            draw(); // Redraw the empty canvas
+        }
+    }
 
     function handleHorizontalZoom(e) {
         horizontalZoom = parseFloat(e.target.value);
@@ -1034,13 +1172,87 @@
         if (isBeatSnapOn) {
             relativeX = Math.round(relativeX * BEAT_SNAP_SUBDIVISION) / BEAT_SNAP_SUBDIVISION;
         }
+        
+        // NEW: Get initial note length from the dropdown
+        const initialLengthInBeats = parseFloat(initialNoteLengthSelect.value);
+        const playLength = (initialLengthInBeats * 60) / tempo;
 
         circles.push({
             id: circleCounter, relativeX: relativeX,
-            frequency: yToFrequency(pos.y), playLength: 0.5, velocity: 100,
+            frequency: yToFrequency(pos.y), playLength: playLength, velocity: 100,
             playedThisCycle: false, colliding: false
         });
         handleHorizontalZoom({target: {value: hZoomSlider.value}});
+        draw();
+    }
+    
+    // NEW: Function to add a chord based on the current settings
+    function addChord(pos) {
+        // Get settings from the UI
+        const chordType = chordTypeSelect.value;
+        const arpBeats = parseFloat(arpBeatsInput.value);
+        const numNotes = chordType === 'Triad' ? 3 : 4; // 3 for Triad, 4 for Seventh
+        
+        // Determine the root note frequency and position based on where the user clicked
+        const rootFreq = yToFrequency(pos.y);
+        let relativeX = pos.x / (PIXELS_PER_BEAT * horizontalZoom);
+        if (isBeatSnapOn) {
+            relativeX = Math.round(relativeX * BEAT_SNAP_SUBDIVISION) / BEAT_SNAP_SUBDIVISION;
+        }
+
+        // Get the scale and root note info
+        const scale = scaleIntervals[activeScale];
+        const rootMidi = noteNameToMidi(activeRootNote);
+        const clickedMidi = frequencyToMidiNote(rootFreq);
+
+        if (rootMidi === null) { alert("Invalid root note for scale snap."); return; }
+
+        // Find the index of the clicked note within the current scale
+        const scaleMidiNotes = scale.map(interval => rootMidi + interval);
+        let closestDist = Infinity;
+        let rootDegreeIndex = 0;
+        
+        // This loop finds which degree of the scale (1st, 2nd, etc.) is closest to the clicked note
+        for(let i=0; i < scale.length; i++) {
+            const dist = Math.abs(clickedMidi - (scaleMidiNotes[i] % 12));
+            if(dist < closestDist) {
+                closestDist = dist;
+                rootDegreeIndex = i;
+            }
+        }
+        
+        // Get the default note length for all notes in the chord
+        const initialLengthInBeats = parseFloat(initialNoteLengthSelect.value);
+        const playLength = (initialLengthInBeats * 60) / tempo;
+        
+        // Build the chord
+        for (let i = 0; i < numNotes; i++) {
+            circleCounter++;
+            
+            // Get the scale degree for this note of the chord (e.g., for a triad: 1st, 3rd, 5th)
+            const scaleDegree = (rootDegreeIndex + (i * 2)) % scale.length;
+            const octaveOffset = Math.floor((rootDegreeIndex + (i * 2)) / scale.length);
+            
+            // Calculate the midi value and frequency for the note
+            const noteMidi = clickedMidi + (scale[scaleDegree] - scale[rootDegreeIndex]) + (octaveOffset * 12);
+            const noteFreq = midiNoteToFrequency(noteMidi);
+            
+            // Calculate the position for arpeggiation
+            // Positive arpBeats moves notes forward, negative moves them backward
+            const arpOffset = i * arpBeats;
+
+            circles.push({
+                id: circleCounter,
+                relativeX: relativeX + arpOffset,
+                frequency: noteFreq,
+                playLength: playLength,
+                velocity: 100,
+                playedThisCycle: false,
+                colliding: false
+            });
+        }
+
+        handleHorizontalZoom({ target: { value: hZoomSlider.value } });
         draw();
     }
 
@@ -1056,17 +1268,53 @@
         document.getElementById('modal-note-number').textContent = circle.id;
         document.getElementById('modal-horizontal-pos').value = circle.relativeX.toFixed(2);
         document.getElementById('modal-frequency').value = circle.frequency.toFixed(4);
-        document.getElementById('modal-play-length').value = circle.playLength.toFixed(2);
+        modalPlayLengthInput.value = circle.playLength.toFixed(2);
         document.getElementById('modal-velocity').value = circle.velocity;
         document.getElementById('modal-base-note').value = '';
         document.getElementById('modal-relative-interval').value = '';
+        
+        // NEW: Update the modal's note length dropdown to match the note's length
+        updateModalSelectFromPlayLength();
     }
+    
+    // NEW: Function to update the play length input when the modal dropdown changes
+    function updatePlayLengthFromModalSelect() {
+        const selectedValue = modalNoteLengthSelect.value;
+        if (selectedValue !== "custom") {
+            const lengthInBeats = parseFloat(selectedValue);
+            const newPlayLength = (lengthInBeats * 60) / tempo;
+            modalPlayLengthInput.value = newPlayLength.toFixed(2);
+        }
+    }
+
+    // NEW: Function to update the modal dropdown when the play length input changes
+    function updateModalSelectFromPlayLength() {
+        const playLength = parseFloat(modalPlayLengthInput.value);
+        if(isNaN(playLength)) return;
+        
+        const lengthInBeats = (playLength * tempo) / 60;
+        
+        // Find the closest standard note duration
+        let closestOption = 'custom';
+        let minDiff = Infinity;
+        
+        for (const option of modalNoteLengthSelect.options) {
+            if (option.value !== 'custom') {
+                const diff = Math.abs(lengthInBeats - parseFloat(option.value));
+                if (diff < 0.01 && diff < minDiff) { // Use a small tolerance for floating point errors
+                    minDiff = diff;
+                    closestOption = option.value;
+                }
+            }
+        }
+        modalNoteLengthSelect.value = closestOption;
+    }
+
 
     function applyModalChanges() {
         if (!selectedCircle) return;
 
         const hPosInput = document.getElementById('modal-horizontal-pos');
-        const playLengthInput = document.getElementById('modal-play-length');
         const velocityInput = document.getElementById('modal-velocity');
         const manualFreqInput = document.getElementById('modal-frequency');
         const baseNoteIdInput = document.getElementById('modal-base-note').value;
@@ -1077,7 +1325,8 @@
         if (isBeatSnapOn) newHPos = Math.round(newHPos * BEAT_SNAP_SUBDIVISION) / BEAT_SNAP_SUBDIVISION;
         selectedCircle.relativeX = newHPos;
         
-        const newPlayLength = parseFloat(playLengthInput.value);
+        // MODIFIED: get play length from the dedicated input field
+        const newPlayLength = parseFloat(modalPlayLengthInput.value);
         if (isNaN(newPlayLength) || newPlayLength <= 0) { alert("Invalid Play Length."); return; }
         selectedCircle.playLength = newPlayLength;
         
@@ -1117,7 +1366,7 @@
         
         document.getElementById('modal-horizontal-pos').value = selectedCircle.relativeX.toFixed(2);
         document.getElementById('modal-frequency').value = selectedCircle.frequency.toFixed(4);
-        document.getElementById('modal-play-length').value = selectedCircle.playLength.toFixed(2);
+        modalPlayLengthInput.value = selectedCircle.playLength.toFixed(2);
         document.getElementById('modal-velocity').value = selectedCircle.velocity;
         document.getElementById('modal-base-note').value = '';
         document.getElementById('modal-relative-interval').value = '';
@@ -1186,9 +1435,26 @@
             convolver.connect(masterGain);
             reverbBtn.textContent = "Reverb: On";
         } else {
+            // Disconnect convolver from its source and destination to mute it
             wetGain.disconnect();
             convolver.disconnect();
             reverbBtn.textContent = "Reverb: Off";
+        }
+    }
+    
+    // NEW: Function to toggle the delay effect
+    function toggleDelay() {
+        const isConnected = delayBtn.classList.toggle('toggled');
+        if(isConnected) {
+            // A gain of 1 means the wet/dry signal passes through
+            delayWetGain.gain.value = delayMixSlider.value;
+            delayDryGain.gain.value = 1.0 - delayMixSlider.value;
+            delayBtn.textContent = "Delay: On";
+        } else {
+            // A gain of 0 mutes the signal
+            delayWetGain.gain.value = 0;
+            delayDryGain.gain.value = 1.0; // Ensure dry signal still passes
+            delayBtn.textContent = "Delay: Off";
         }
     }
     
