@@ -348,7 +348,7 @@
     let isDragging = false;
     let dragOffsetX;
 
-    // --- MODIFIED: Display State ---
+    // --- Display State ---
     let noteStyleMode = 'note_value'; // 'note_value' or 'circle'
     let accidentalMode = 'sharps'; // 'sharps', 'demisharps', or 'none'
     let isDisplayingNoteName = true;
@@ -407,17 +407,19 @@
         'Chromatic': [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
     };
     let scaleIntervals = {};
+    
+    // MODIFIED: Renamed keys to match CSS variables (e.g., background -> pageBg)
     const THEMES = {
-        'Standard Light': { background: '#f0f0f0', canvas: '#ffffff', text: '#000000', lines: '#cccccc', notes: '#000000', playhead: '#ff0000', selection: 'rgba(255, 255, 0, 0.5)', controlBg: '#ffffff', buttonBg: '#007bff', buttonHover: '#0056b3' },
-        'Deep Dark':      { background: '#121212', canvas: '#1e1e1e', text: '#e0e0e0', lines: '#444444', notes: '#e0e0e0', playhead: '#ff4d4d', selection: 'rgba(255, 215, 0, 0.5)', controlBg: '#2a2a2a', buttonBg: '#3e3e3e', buttonHover: '#555555' },
-        'Sepia':          { background: '#f4f0e8', canvas: '#faf8f2', text: '#5a4d3a', lines: '#d3c0a5', notes: '#5a4d3a', playhead: '#c75c52', selection: 'rgba(218, 165, 32, 0.5)', controlBg: '#e9e2d7', buttonBg: '#8c7a62', buttonHover: '#6b5c49' },
-        'Blueprint':      { background: '#2a3f5a', canvas: '#3a506b', text: '#ffffff', lines: '#5a7d9a', notes: '#ffffff', playhead: '#ffcc00', selection: 'rgba(173, 216, 230, 0.5)', controlBg: '#34495e', buttonBg: '#5a7d9a', buttonHover: '#4e6a85' },
-        'Forest':         { background: '#2c3e32', canvas: '#3e5045', text: '#e8f5e9', lines: '#6a8a79', notes: '#e8f5e9', playhead: '#f9a825', selection: 'rgba(233, 175, 96, 0.6)', controlBg: '#374c3d', buttonBg: '#6a8a79', buttonHover: '#5c7a6a' },
-        'Rose Quartz':    { background: '#f7f2f6', canvas: '#ffffff', text: '#6d435a', lines: '#f2d8e7', notes: '#6d435a', playhead: '#e91e63', selection: 'rgba(255, 182, 193, 0.6)', controlBg: '#fce4ec', buttonBg: '#c2185b', buttonHover: '#ad1457' },
-        'Neon Lights':    { background: '#0d0221', canvas: '#261447', text: '#00ff87', lines: '#6a0dad', notes: '#ff00f1', playhead: '#00ff87', selection: 'rgba(108, 92, 231, 0.6)', controlBg: '#261447', buttonBg: '#ff00f1', buttonHover: '#c700bf' },
-        'Noir':           { background: '#1a1a1a', canvas: '#000000', text: '#ffffff', lines: '#333333', notes: '#ffffff', playhead: '#e50914', selection: 'rgba(200, 200, 200, 0.5)', controlBg: '#101010', buttonBg: '#e50914', buttonHover: '#f40612' },
-        'Synthwave':      { background: '#241940', canvas: '#1c1433', text: '#00d8ff', lines: '#5d4c86', notes: '#ff3f83', playhead: '#00d8ff', selection: 'rgba(255, 232, 105, 0.5)', controlBg: '#2d2050', buttonBg: '#ff3f83', buttonHover: '#e63876' },
-        'Gold':           { background: '#1f1f1f', canvas: '#2b2b2b', text: '#ffd700', lines: '#6e5c21', notes: '#ffd700', playhead: '#ffffff', selection: 'rgba(255, 215, 0, 0.4)', controlBg: '#3c3c3c', buttonBg: '#b8860b', buttonHover: '#daa520' }
+        'Standard Light': { pageBg: '#f0f0f0', canvas: '#ffffff', textColor: '#000000', lines: '#cccccc', notes: '#000000', playhead: '#ff0000', selection: 'rgba(255, 255, 0, 0.5)', controlsBg: '#ffffff', buttonBg: '#007bff', buttonHover: '#0056b3' },
+        'Deep Dark':      { pageBg: '#121212', canvas: '#1e1e1e', textColor: '#e0e0e0', lines: '#444444', notes: '#e0e0e0', playhead: '#ff4d4d', selection: 'rgba(255, 215, 0, 0.5)', controlsBg: '#2a2a2a', buttonBg: '#3e3e3e', buttonHover: '#555555' },
+        'Sepia':          { pageBg: '#f4f0e8', canvas: '#faf8f2', textColor: '#5a4d3a', lines: '#d3c0a5', notes: '#5a4d3a', playhead: '#c75c52', selection: 'rgba(218, 165, 32, 0.5)', controlsBg: '#e9e2d7', buttonBg: '#8c7a62', buttonHover: '#6b5c49' },
+        'Blueprint':      { pageBg: '#2a3f5a', canvas: '#3a506b', textColor: '#ffffff', lines: '#5a7d9a', notes: '#ffffff', playhead: '#ffcc00', selection: 'rgba(173, 216, 230, 0.5)', controlsBg: '#34495e', buttonBg: '#5a7d9a', buttonHover: '#4e6a85' },
+        'Forest':         { pageBg: '#2c3e32', canvas: '#3e5045', textColor: '#e8f5e9', lines: '#6a8a79', notes: '#e8f5e9', playhead: '#f9a825', selection: 'rgba(233, 175, 96, 0.6)', controlsBg: '#374c3d', buttonBg: '#6a8a79', buttonHover: '#5c7a6a' },
+        'Rose Quartz':    { pageBg: '#f7f2f6', canvas: '#ffffff', textColor: '#6d435a', lines: '#f2d8e7', notes: '#6d435a', playhead: '#e91e63', selection: 'rgba(255, 182, 193, 0.6)', controlsBg: '#fce4ec', buttonBg: '#c2185b', buttonHover: '#ad1457' },
+        'Neon Lights':    { pageBg: '#0d0221', canvas: '#261447', textColor: '#00ff87', lines: '#6a0dad', notes: '#ff00f1', playhead: '#00ff87', selection: 'rgba(108, 92, 231, 0.6)', controlsBg: '#261447', buttonBg: '#ff00f1', buttonHover: '#c700bf' },
+        'Noir':           { pageBg: '#1a1a1a', canvas: '#000000', textColor: '#ffffff', lines: '#333333', notes: '#ffffff', playhead: '#e50914', selection: 'rgba(200, 200, 200, 0.5)', controlsBg: '#101010', buttonBg: '#e50914', buttonHover: '#f40612' },
+        'Synthwave':      { pageBg: '#241940', canvas: '#1c1433', textColor: '#00d8ff', lines: '#5d4c86', notes: '#ff3f83', playhead: '#00d8ff', selection: 'rgba(255, 232, 105, 0.5)', controlsBg: '#2d2050', buttonBg: '#ff3f83', buttonHover: '#e63876' },
+        'Gold':           { pageBg: '#1f1f1f', canvas: '#2b2b2b', textColor: '#ffd700', lines: '#6e5c21', notes: '#ffd700', playhead: '#ffffff', selection: 'rgba(255, 215, 0, 0.4)', controlsBg: '#3c3c3c', buttonBg: '#b8860b', buttonHover: '#daa520' }
     };
     let currentTheme = THEMES['Standard Light'];
 
@@ -469,7 +471,6 @@
     const modalNoteLengthSelect = document.getElementById('modal-note-length-select');
     const modalPlayLengthInput = document.getElementById('modal-play-length');
 
-    // MODIFIED: New DOM element references for display controls
     const noteStyleSelect = document.getElementById('noteStyleSelect');
     const accidentalModeSelect = document.getElementById('accidentalModeSelect');
     const displayNoteNameBtn = document.getElementById('displayNoteNameBtn');
@@ -520,12 +521,11 @@
         activeRootNote = rootNoteInput.value;
         reverbAmountSlider.value = 1.0;
         
-        // MODIFIED: Set default UI values from new state variables
         noteStyleSelect.value = noteStyleMode;
         accidentalModeSelect.value = accidentalMode;
         
         updateSnapButtons();
-        updateDisplayToggleButtons(); // Set initial state for new buttons
+        updateDisplayToggleButtons();
         updateCanvasWidth();
 
         applyTheme(themeSelect.value);
@@ -660,7 +660,6 @@
         return freq;
     }
     
-    // MODIFIED: Complete rewrite of the draw function for layered display
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         canvas.style.backgroundColor = currentTheme.canvas;
@@ -868,6 +867,9 @@
         hZoomSlider.addEventListener('input', handleHorizontalZoom);
         totalBeatsInput.addEventListener('change', handleBeatsInputChange);
         
+        // MODIFIED: Added event listener for the theme select dropdown
+        themeSelect.addEventListener('change', e => applyTheme(e.target.value));
+
         edo12SnapBtn.addEventListener('click', () => handleEdoSnap(12));
         edo24SnapBtn.addEventListener('click', () => handleEdoSnap(24));
         edoCustomSnapBtn.addEventListener('click', () => {
@@ -886,7 +888,6 @@
         beatSnapBtn.addEventListener('click', toggleBeatSnap);
         modeRadios.forEach(radio => radio.addEventListener('change', e => { currentMode = e.target.value; canvas.style.cursor = 'default'; }));
         
-        // MODIFIED: Event listeners for new display controls
         noteStyleSelect.addEventListener('change', (e) => { noteStyleMode = e.target.value; draw(); });
         accidentalModeSelect.addEventListener('change', (e) => { accidentalMode = e.target.value; draw(); });
         displayNoteNameBtn.addEventListener('click', () => { isDisplayingNoteName = !isDisplayingNoteName; updateDisplayToggleButtons(); draw(); });
@@ -1182,7 +1183,6 @@
         isScaleSnapOn = false;
     }
     
-    // NEW: Function to update the text and style of the new toggle buttons
     function updateDisplayToggleButtons() {
         displayNoteNameBtn.textContent = `Note Name: ${isDisplayingNoteName ? 'On' : 'Off'}`;
         displayNoteNameBtn.classList.toggle('toggled', isDisplayingNoteName);
