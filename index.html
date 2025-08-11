@@ -178,19 +178,6 @@
             <label for="themeSelect">Theme:</label>
             <select id="themeSelect"></select>
             <br><br>
-            <label for="noteDisplayMode">Display:</label>
-            <select id="noteDisplayMode">
-                <option value="nothing">Nothing</option>
-                <option value="note_number">Note Number</option>
-                <option value="note_value">Note Value</option>
-                <option value="note_value_sharps">Note Value & Sharps</option>
-                <option value="note_value_demisharps">Note Value & Demisharps</option>
-                <option value="frequency">Frequency</option>
-                <option value="note_cents">Note Name ± Cents</option>
-                <option value="note_length">Note Length</option>
-                <option value="sharps">Sharps</option>
-                <option value="demisharps">Demisharps</option>
-            </select>
             <label for="initialNoteLength">Initial Note Length:</label>
             <select id="initialNoteLength">
                 <option value="4">Whole Note</option>
@@ -199,15 +186,33 @@
                 <option value="0.5">Eighth Note</option>
                 <option value="0.25">Sixteenth Note</option>
             </select>
-            <br><br>
             <label for="vZoom">V-Zoom:</label>
             <input type="range" id="vZoom" min="1" max="5" value="1.5" step="0.1">
             <label for="hZoom">H-Zoom:</label>
             <input type="range" id="hZoom" min="1" max="5" value="1" step="0.1">
-            <!-- NEW: Beats input field -->
             <label for="totalBeats">Beats:</label>
             <input type="number" id="totalBeats" value="16" min="4" step="4">
             <button id="beatSnapBtn">Beat Snap: Off</button>
+        </div>
+        <div class="control-group">
+            <label for="noteStyleSelect">Display Style:</label>
+            <select id="noteStyleSelect">
+                <option value="note_value">Note Value</option>
+                <option value="circle">Circle</option>
+            </select>
+            <label for="accidentalModeSelect">Accidentals:</label>
+            <select id="accidentalModeSelect">
+                <option value="sharps">Sharps</option>
+                <option value="demisharps">Demisharps</option>
+                <option value="none">None</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <button id="displayNoteNameBtn">Note Name: On</button>
+            <button id="displayNoteNumberBtn">Note Number: On</button>
+            <button id="displayFrequencyBtn">Frequency: On</button>
+            <button id="displayCentsBtn">Cents: On</button>
+            <button id="displayLengthBtn">Length: On</button>
         </div>
         <div class="control-group">
              <button id="reverbBtn">Reverb: Off</button>
@@ -228,6 +233,7 @@
             <button id="edo24SnapBtn">24-EDO</button>
             <input type="number" id="edoCustomInput" value="19" min="2">
             <button id="edoCustomSnapBtn">EDO Snap</button>
+            <button id="snapOffBtn">Snap Off</button>
         </div>
         <div class="control-group">
             <button id="scaleSnapBtn">Scale Snap: Off</button>
@@ -333,7 +339,6 @@
     let verticalZoom = 1.5;
     let horizontalZoom = 1;
     let currentMode = 'insert';
-    let noteDisplayMode = 'note_value_sharps';
     let activeEdoSnap = 12;
     let isBeatSnapOn = true;
     let isScaleSnapOn = false;
@@ -342,6 +347,15 @@
     let selectedCircle = null;
     let isDragging = false;
     let dragOffsetX;
+
+    // --- MODIFIED: Display State ---
+    let noteStyleMode = 'note_value'; // 'note_value' or 'circle'
+    let accidentalMode = 'sharps'; // 'sharps', 'demisharps', or 'none'
+    let isDisplayingNoteName = true;
+    let isDisplayingNoteNumber = true;
+    let isDisplayingFrequency = true;
+    let isDisplayingCents = true;
+    let isDisplayingLength = true;
 
     // --- Audio & MIDI State ---
     let audioContext;
@@ -363,7 +377,7 @@
         eighth: new Image(), sixteenth: new Image()
     };
     const coloredImages = {};
-    const coloredPlayheadImages = {}; // MODIFIED: For flashing images
+    const coloredPlayheadImages = {};
     
     // --- Musical Constants ---
     const PIXELS_PER_BEAT = 50;
@@ -412,19 +426,19 @@
     const tempoInput = document.getElementById('tempo');
     const vZoomSlider = document.getElementById('vZoom');
     const hZoomSlider = document.getElementById('hZoom');
-    const totalBeatsInput = document.getElementById('totalBeats'); // NEW
+    const totalBeatsInput = document.getElementById('totalBeats');
     const volumeSlider = document.getElementById('volume');
     const themeSelect = document.getElementById('themeSelect');
     const edo12SnapBtn = document.getElementById('edo12SnapBtn');
     const edo24SnapBtn = document.getElementById('edo24SnapBtn');
     const edoCustomSnapBtn = document.getElementById('edoCustomSnapBtn');
     const edoCustomInput = document.getElementById('edoCustomInput');
+    const snapOffBtn = document.getElementById('snapOffBtn');
     const beatSnapBtn = document.getElementById('beatSnapBtn');
     const scaleSnapBtn = document.getElementById('scaleSnapBtn');
     const scaleSelect = document.getElementById('scaleSelect');
     const rootNoteInput = document.getElementById('rootNoteInput');
     const modeRadios = document.querySelectorAll('input[name="mode"]');
-    const noteDisplayModeSelect = document.getElementById('noteDisplayMode');
     const initialNoteLengthSelect = document.getElementById('initialNoteLength');
     const saveFileBtn = document.getElementById('saveFileBtn');
     const loadFileBtn = document.getElementById('loadFileBtn');
@@ -455,12 +469,18 @@
     const modalNoteLengthSelect = document.getElementById('modal-note-length-select');
     const modalPlayLengthInput = document.getElementById('modal-play-length');
 
+    // MODIFIED: New DOM element references for display controls
+    const noteStyleSelect = document.getElementById('noteStyleSelect');
+    const accidentalModeSelect = document.getElementById('accidentalModeSelect');
+    const displayNoteNameBtn = document.getElementById('displayNoteNameBtn');
+    const displayNoteNumberBtn = document.getElementById('displayNoteNumberBtn');
+    const displayFrequencyBtn = document.getElementById('displayFrequencyBtn');
+    const displayCentsBtn = document.getElementById('displayCentsBtn');
+    const displayLengthBtn = document.getElementById('displayLengthBtn');
 
     // --- Core Functions ---
     function init() {
-        // canvas.width is set by updateCanvasWidth
         canvas.height = 1000;
-        document.getElementById('adjustMode').checked = false;
         document.getElementById('insertMode').checked = true;
         
         playheadPosition = START_BEAT * PIXELS_PER_BEAT;
@@ -495,15 +515,18 @@
         tempo = parseInt(tempoInput.value, 10);
         verticalZoom = parseFloat(vZoomSlider.value);
         horizontalZoom = parseFloat(hZoomSlider.value);
-        noteDisplayModeSelect.value = noteDisplayMode;
         baseFrequency = parseFloat(baseFreqInput.value);
         activeScale = scaleSelect.value;
         activeRootNote = rootNoteInput.value;
-        
         reverbAmountSlider.value = 1.0;
         
+        // MODIFIED: Set default UI values from new state variables
+        noteStyleSelect.value = noteStyleMode;
+        accidentalModeSelect.value = accidentalMode;
+        
         updateSnapButtons();
-        updateCanvasWidth(); // NEW: Set initial canvas width
+        updateDisplayToggleButtons(); // Set initial state for new buttons
+        updateCanvasWidth();
 
         applyTheme(themeSelect.value);
         setupAudio();
@@ -637,10 +660,12 @@
         return freq;
     }
     
+    // MODIFIED: Complete rewrite of the draw function for layered display
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         canvas.style.backgroundColor = currentTheme.canvas;
 
+        // Draw beat snap grid
         if (isBeatSnapOn) {
             ctx.strokeStyle = currentTheme.lines + '80';
             ctx.lineWidth = 1;
@@ -653,6 +678,7 @@
             }
         }
         
+        // Draw staff lines
         ctx.strokeStyle = currentTheme.lines;
         ctx.lineWidth = 1;
         [...trebleClefFrequencies, ...bassClefFrequencies].forEach(freq => {
@@ -663,6 +689,7 @@
             ctx.stroke();
         });
 
+        // Draw clefs
         const G4_Y = frequencyToY(392.00);
         const F3_Y = frequencyToY(174.61);
         if (coloredImages.gClef) {
@@ -676,10 +703,12 @@
             ctx.drawImage(coloredImages.fClef, 10, F3_Y - clefHeight/2, clefWidth, clefHeight);
         }
 
+        // --- Draw Notes and Layered Info ---
         circles.forEach(circle => {
             const x = circle.relativeX * PIXELS_PER_BEAT * horizontalZoom;
             const y = frequencyToY(circle.frequency);
 
+            // 1. Draw Selection Highlight
             if (circle === selectedCircle) {
                 ctx.fillStyle = currentTheme.selection;
                 ctx.beginPath();
@@ -687,13 +716,11 @@
                 ctx.fill();
             }
             
-            const isNoteValueDisplay = noteDisplayMode.startsWith('note_value');
-
-            if(isNoteValueDisplay){
+            // 2. Draw Base Note Style (Note Value Image or Circle)
+            if (noteStyleMode === 'note_value') {
                 const noteImage = getNoteValueImage(circle.playLength, tempo);
                 const imageKey = Object.keys(sourceImages).find(key => sourceImages[key] === noteImage);
                 if (imageKey) {
-                    // MODIFIED: Choose the correct colored image based on collision state
                     const imageSet = circle.colliding ? coloredPlayheadImages : coloredImages;
                     const coloredImg = imageSet[imageKey];
                     if(coloredImg){
@@ -702,20 +729,51 @@
                         ctx.drawImage(coloredImg, x - imgWidth/2, y - (imgHeight * 4 / 5), imgWidth, imgHeight);
                     }
                 }
-            } else {
+            } else { // 'circle' style
                 ctx.beginPath();
                 ctx.arc(x, y, circleRadius, 0, Math.PI * 2);
                 ctx.fillStyle = circle.colliding ? currentTheme.playhead : currentTheme.notes;
                 ctx.fill();
             }
 
-            if (noteDisplayMode === 'note_number') {
-                ctx.fillStyle = currentTheme.notes;
+            // --- 3. Draw Layered Information Overlays ---
+            ctx.fillStyle = currentTheme.notes;
+            ctx.textAlign = 'center';
+
+            // Draw Note Number
+            if (isDisplayingNoteNumber) {
                 ctx.font = 'bold 12px sans-serif';
-                ctx.textAlign = 'center';
                 ctx.textBaseline = 'bottom';
-                ctx.fillText(circle.id, x, y - circleRadius - 4);
-            } else if (noteDisplayMode === 'note_length') {
+                ctx.fillText(circle.id, x, y - circleRadius - 15);
+            }
+            
+            // Draw Note Name
+            if(isDisplayingNoteName) {
+                const noteInfo = frequencyToNoteAndCents(circle.frequency);
+                ctx.font = '12px sans-serif';
+                ctx.textBaseline = 'top';
+                ctx.fillText(noteInfo.name, x, y + circleRadius + 5);
+            }
+            
+            // Draw Frequency
+            if(isDisplayingFrequency) {
+                ctx.font = '10px sans-serif';
+                ctx.textBaseline = 'top';
+                ctx.fillText(circle.frequency.toFixed(2) + ' Hz', x, y + circleRadius + 20);
+            }
+            
+            // Draw Cents
+            if(isDisplayingCents) {
+                const noteInfo = frequencyToNoteAndCents(circle.frequency);
+                const sign = noteInfo.cents >= 0 ? '+' : '';
+                const displayText = `${sign}${noteInfo.cents.toFixed(1)}c`;
+                ctx.font = '10px sans-serif';
+                ctx.textBaseline = 'top';
+                ctx.fillText(displayText, x, y + circleRadius + 32);
+            }
+            
+            // Draw Length Line
+            if (isDisplayingLength) {
                 const pixelsPerSecond = (tempo / 60) * PIXELS_PER_BEAT * horizontalZoom;
                 const lineLengthInPixels = circle.playLength * pixelsPerSecond;
                 ctx.strokeStyle = currentTheme.notes;
@@ -724,16 +782,18 @@
                 ctx.moveTo(x + circleRadius, y);
                 ctx.lineTo(x + circleRadius + lineLengthInPixels, y);
                 ctx.stroke();
-            } else if (noteDisplayMode === 'sharps' || noteDisplayMode === 'note_value_sharps') {
-                const noteInfo = frequencyToNoteAndCents(circle.frequency);
+            }
+
+            // 4. Draw Accidentals
+            const noteInfo = frequencyToNoteAndCents(circle.frequency);
+            if (accidentalMode === 'sharps') {
                 if (noteInfo.name.includes('#')) {
-                    ctx.fillStyle = currentTheme.notes;
                     ctx.font = 'bold 16px sans-serif';
                     ctx.textAlign = 'right';
                     ctx.textBaseline = 'middle';
                     ctx.fillText('#', x - circleRadius - 4, y);
                 }
-            } else if (noteDisplayMode === 'demisharps' || noteDisplayMode === 'note_value_demisharps') {
+            } else if (accidentalMode === 'demisharps') {
                 const cents = getCentsFromNatural(circle.frequency);
                 const symbolSize = 16;
                 const symbolX = x - circleRadius - symbolSize / 2 - 4;
@@ -742,7 +802,6 @@
                 if (cents >= 25 && cents < 75) {
                     if(coloredImages.demisharp) ctx.drawImage(coloredImages.demisharp, symbolX, symbolY, symbolSize, symbolSize);
                 } else if (cents >= 75 && cents < 125) {
-                    ctx.fillStyle = currentTheme.notes;
                     ctx.font = 'bold 18px sans-serif';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
@@ -750,24 +809,10 @@
                 } else if (cents >= 125 && cents < 175) {
                     if(coloredImages.sesquisharp) ctx.drawImage(coloredImages.sesquisharp, symbolX, symbolY, symbolSize, symbolSize);
                 }
-            } else if (noteDisplayMode === 'frequency') {
-                ctx.fillStyle = currentTheme.notes;
-                ctx.font = '12px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'bottom';
-                ctx.fillText(circle.frequency.toFixed(2) + ' Hz', x, y - circleRadius - 4);
-            } else if (noteDisplayMode === 'note_cents') {
-                const noteInfo = frequencyToNoteAndCents(circle.frequency);
-                const sign = noteInfo.cents >= 0 ? '+' : '';
-                const displayText = `${noteInfo.name} ${sign}${noteInfo.cents.toFixed(1)}c`;
-                ctx.fillStyle = currentTheme.notes;
-                ctx.font = '12px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'bottom';
-                ctx.fillText(displayText, x, y - circleRadius - 4);
             }
         });
 
+        // --- Draw Playhead ---
         ctx.beginPath();
         ctx.moveTo(playheadPosition, 0);
         ctx.lineTo(playheadPosition, canvas.height);
@@ -775,6 +820,7 @@
         ctx.lineWidth = 2;
         ctx.stroke();
     }
+
 
     function gameLoop(timestamp) {
         if (!isPlaying) return;
@@ -820,7 +866,7 @@
         volumeSlider.addEventListener('input', e => { if(masterGain) masterGain.gain.value = e.target.value; });
         vZoomSlider.addEventListener('input', e => { verticalZoom = parseFloat(e.target.value); draw(); });
         hZoomSlider.addEventListener('input', handleHorizontalZoom);
-        totalBeatsInput.addEventListener('change', handleBeatsInputChange); // NEW
+        totalBeatsInput.addEventListener('change', handleBeatsInputChange);
         
         edo12SnapBtn.addEventListener('click', () => handleEdoSnap(12));
         edo24SnapBtn.addEventListener('click', () => handleEdoSnap(24));
@@ -829,14 +875,26 @@
             edoCustomInput.value = val;
             handleEdoSnap(val);
         });
+        snapOffBtn.addEventListener('click', () => {
+            deactivateAllSnaps();
+            updateSnapButtons();
+        });
         scaleSnapBtn.addEventListener('click', toggleScaleSnap);
         scaleSelect.addEventListener('change', e => { activeScale = e.target.value; });
         rootNoteInput.addEventListener('change', e => { activeRootNote = e.target.value; });
 
         beatSnapBtn.addEventListener('click', toggleBeatSnap);
-        noteDisplayModeSelect.addEventListener('change', e => { noteDisplayMode = e.target.value; draw(); });
         modeRadios.forEach(radio => radio.addEventListener('change', e => { currentMode = e.target.value; canvas.style.cursor = 'default'; }));
         
+        // MODIFIED: Event listeners for new display controls
+        noteStyleSelect.addEventListener('change', (e) => { noteStyleMode = e.target.value; draw(); });
+        accidentalModeSelect.addEventListener('change', (e) => { accidentalMode = e.target.value; draw(); });
+        displayNoteNameBtn.addEventListener('click', () => { isDisplayingNoteName = !isDisplayingNoteName; updateDisplayToggleButtons(); draw(); });
+        displayNoteNumberBtn.addEventListener('click', () => { isDisplayingNoteNumber = !isDisplayingNoteNumber; updateDisplayToggleButtons(); draw(); });
+        displayFrequencyBtn.addEventListener('click', () => { isDisplayingFrequency = !isDisplayingFrequency; updateDisplayToggleButtons(); draw(); });
+        displayCentsBtn.addEventListener('click', () => { isDisplayingCents = !isDisplayingCents; updateDisplayToggleButtons(); draw(); });
+        displayLengthBtn.addEventListener('click', () => { isDisplayingLength = !isDisplayingLength; updateDisplayToggleButtons(); draw(); });
+
         reverbBtn.addEventListener('click', toggleReverb);
         reverbAmountSlider.addEventListener('input', e => { if (wetGain) wetGain.gain.value = parseFloat(e.target.value); });
         
@@ -939,7 +997,6 @@
                     playBtn.textContent = 'Play'; 
                     playheadPosition = START_BEAT * PIXELS_PER_BEAT;
 
-                    // NEW: Update beats input based on loaded file content
                     const maxNoteBeat = circles.length > 0 ? Math.max(...circles.map(c => c.relativeX)) : START_BEAT;
                     const requiredBeats = Math.ceil(maxNoteBeat) - START_BEAT;
                     totalBeatsInput.value = Math.max(4, Math.ceil(requiredBeats / 4) * 4);
@@ -1042,18 +1099,16 @@
         }
     }
 
-    // MODIFIED: This function is now just a wrapper for the new updateCanvasWidth function.
     function handleHorizontalZoom(e) {
         horizontalZoom = parseFloat(e.target.value);
         updateCanvasWidth();
         draw();
     }
 
-    // NEW: Handles resizing the canvas when the Beats input changes.
     function handleBeatsInputChange(e) {
         const newBeats = parseInt(e.target.value, 10);
         if (isNaN(newBeats) || newBeats < 4) {
-            e.target.value = 4; // Enforce minimum
+            e.target.value = 4;
         }
         
         const maxBeat = START_BEAT + newBeats;
@@ -1063,7 +1118,6 @@
             if (confirm("This will delete notes outside the new range. Continue?")) {
                 circles = circles.filter(c => c.relativeX <= maxBeat);
             } else {
-                // Revert the input value if user cancels
                 const maxNoteBeat = circles.length > 0 ? Math.max(...circles.map(c => c.relativeX)) : START_BEAT;
                 const requiredBeats = Math.ceil(maxNoteBeat) - START_BEAT;
                 e.target.value = Math.max(4, Math.ceil(requiredBeats / 4) * 4);
@@ -1075,10 +1129,8 @@
         draw();
     }
     
-    // NEW: Centralized function to set the canvas width based on total beats and zoom.
     function updateCanvasWidth() {
         const totalBeats = parseInt(totalBeatsInput.value, 10) || 16;
-        // The canvas needs to be wide enough for the start offset plus the user-defined beats.
         const calculatedWidth = (totalBeats + START_BEAT) * PIXELS_PER_BEAT * horizontalZoom;
         canvas.width = Math.max(canvasContainer.clientWidth, calculatedWidth);
     }
@@ -1100,18 +1152,22 @@
     }
     
     function handleEdoSnap(edoValue) {
-        deactivateAllSnaps(false);
         if (activeEdoSnap === edoValue) {
             activeEdoSnap = 0;
         } else {
+            deactivateAllSnaps();
             activeEdoSnap = edoValue;
         }
         updateSnapButtons();
     }
 
     function toggleScaleSnap() {
-        deactivateAllSnaps(false);
-        isScaleSnapOn = !isScaleSnapOn;
+        if (isScaleSnapOn) {
+            isScaleSnapOn = false;
+        } else {
+            deactivateAllSnaps();
+            isScaleSnapOn = true;
+        }
         updateSnapButtons();
     }
     
@@ -1126,6 +1182,24 @@
         isScaleSnapOn = false;
     }
     
+    // NEW: Function to update the text and style of the new toggle buttons
+    function updateDisplayToggleButtons() {
+        displayNoteNameBtn.textContent = `Note Name: ${isDisplayingNoteName ? 'On' : 'Off'}`;
+        displayNoteNameBtn.classList.toggle('toggled', isDisplayingNoteName);
+        
+        displayNoteNumberBtn.textContent = `Note Number: ${isDisplayingNoteNumber ? 'On' : 'Off'}`;
+        displayNoteNumberBtn.classList.toggle('toggled', isDisplayingNoteNumber);
+        
+        displayFrequencyBtn.textContent = `Frequency: ${isDisplayingFrequency ? 'On' : 'Off'}`;
+        displayFrequencyBtn.classList.toggle('toggled', isDisplayingFrequency);
+        
+        displayCentsBtn.textContent = `Cents: ${isDisplayingCents ? 'On' : 'Off'}`;
+        displayCentsBtn.classList.toggle('toggled', isDisplayingCents);
+
+        displayLengthBtn.textContent = `Length: ${isDisplayingLength ? 'On' : 'Off'}`;
+        displayLengthBtn.classList.toggle('toggled', isDisplayingLength);
+    }
+
     function updateSnapButtons() {
         edo12SnapBtn.classList.toggle('toggled', activeEdoSnap === 12);
         edo24SnapBtn.classList.toggle('toggled', activeEdoSnap === 24);
@@ -1140,7 +1214,6 @@
     function addCircle(pos) {
         let relativeX = pos.x / (PIXELS_PER_BEAT * horizontalZoom);
         
-        // Prevent adding notes before start beat or after end beat
         const maxBeat = START_BEAT + parseInt(totalBeatsInput.value, 10);
         if (relativeX < START_BEAT || relativeX > maxBeat) return;
 
@@ -1201,7 +1274,6 @@
             const arpOffset = i * arpBeats;
             const notePosition = relativeX + arpOffset;
 
-            // Do not add chord notes that would fall out of bounds
             if (notePosition > maxBeat) continue;
 
             circleCounter++;
@@ -1393,7 +1465,6 @@
         return offscreenCanvas;
     }
     
-    // MODIFIED: Now colors images for both standard notes and flashing playhead notes
     function recolorImages() {
         for (const key in sourceImages) {
             coloredImages[key] = colorizeImage(sourceImages[key], currentTheme.notes);
