@@ -22,7 +22,9 @@
         --line-color: #cccccc;
         --note-color: #000000;
         --playhead-color: #ff0000;
-        --selection-color: rgba(255, 255, 0, 0.5);
+        --selection-color: rgba(0, 123, 255, 0.4);
+        --lasso-color: rgba(0, 123, 255, 0.2);
+        --lasso-border-color: rgba(0, 123, 255, 0.8);
     }
     body {
         font-family: sans-serif;
@@ -85,6 +87,10 @@
         margin: 2px;
         transition: background-color 0.2s ease;
     }
+    #playBtn {
+        padding: 12px 20px;
+        font-size: 18px;
+    }
     #controls button:hover {
         background-color: var(--button-hover-bg);
     }
@@ -108,7 +114,7 @@
         padding: 5px;
         vertical-align: middle;
     }
-    #edoCustomInput, #rootNoteInput, #totalBeats {
+    #edoCustomInput, #rootNoteInput, #totalBeats, #barLinesInput {
         width: 50px;
     }
     #canvas-container {
@@ -143,6 +149,15 @@
     .modal-content input, .modal-content select { width: 95%; padding: 8px; margin-top: 5px; }
     .close-button { color: #fff; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
     .info-text { font-size: 12px; color: #555; margin: 0; }
+    #bulkAdjustControls {
+        border: 1px solid var(--border-color);
+        padding: 10px;
+        margin-top: 10px;
+        border-radius: 5px;
+        display: none; /* Hidden by default */
+    }
+    #bulkAdjustControls label { font-size: 14px; }
+    #bulkAdjustControls input { width: 60px; }
 </style>
 </head>
 <body>
@@ -169,8 +184,17 @@
             <input type="radio" id="insertChordMode" name="mode" value="insert_chord">
             <label for="insertChordMode">Insert Chord (r)</label>
         </div>
+         <div class="control-group" id="bulkAdjustControls">
+            <h4 style="margin-top:0; margin-bottom: 10px;">Selected Notes Adjustment</h4>
+            <label for="bulkHMove">Move Horizontally (beats):</label>
+            <input type="number" id="bulkHMove" value="0" step="0.125">
+            <label for="bulkVMove">Move Vertically (steps):</label>
+            <input type="number" id="bulkVMove" value="0" step="1">
+            <button id="applyBulkAdjustBtn">Apply</button>
+        </div>
         <div class="control-group">
             <button id="playBtn">Play</button>
+            <button id="repeatBtn">Repeat: Off</button>
             <label for="tempo">Tempo:</label>
             <input type="number" id="tempo" value="120" min="40" max="240">
             <label for="volume">Volume:</label>
@@ -192,6 +216,8 @@
             <input type="range" id="hZoom" min="1" max="5" value="1" step="0.1">
             <label for="totalBeats">Beats:</label>
             <input type="number" id="totalBeats" value="16" min="4" step="4">
+            <label for="barLinesInput">Bar Lines:</label>
+            <input type="number" id="barLinesInput" value="4" min="1" step="1">
             <button id="beatSnapBtn">Beat Snap: Off</button>
         </div>
         <div class="control-group">
@@ -274,7 +300,7 @@
             <input type="file" id="midiFileInput" accept=".mid,.midi" style="display: none;">
         </div>
         <div class="control-group">
-            <p class="info-text"><b>Keyboard Shortcuts:</b> <b>Space</b> = Play/Pause | <b>w</b> = Rewind | <b>q</b> = Cycle Note Length | <b>e</b> = Edit Note | <b>r</b> = Insert Chord | <b>+/-</b> = Adjust Velocity</p>
+            <p class="info-text"><b>Keyboard Shortcuts:</b> <b>Space</b> = Play/Pause | <b>Shift+Click</b> = Multi-select | <b>w</b> = Rewind | <b>q</b> = Cycle Note Length | <b>e</b> = Edit Note | <b>r</b> = Insert Chord | <b>+/-</b> = Adjust Velocity</p>
         </div>
     </div>
 </div>
@@ -333,6 +359,7 @@
     let circles = [];
     let circleCounter = 0;
     let isPlaying = false;
+    let isRepeatOn = false;
     let playheadPosition = 0;
     let lastTime = 0;
     let tempo = 120;
@@ -344,9 +371,13 @@
     let isScaleSnapOn = false;
     let activeScale = 'Major';
     let activeRootNote = 'C4';
-    let selectedCircle = null;
+    let selectedCircles = [];
     let isDragging = false;
     let dragOffsetX;
+    let isLassoing = false;
+    let lassoStartPos = { x: 0, y: 0 };
+    let lassoEndPos = { x: 0, y: 0 };
+
 
     // --- Display State ---
     let noteStyleMode = 'note_value'; // 'note_value' or 'circle'
@@ -408,27 +439,28 @@
     };
     let scaleIntervals = {};
     
-    // MODIFIED: Renamed keys to match CSS variables (e.g., background -> pageBg)
     const THEMES = {
-        'Standard Light': { pageBg: '#f0f0f0', canvas: '#ffffff', textColor: '#000000', lines: '#cccccc', notes: '#000000', playhead: '#ff0000', selection: 'rgba(255, 255, 0, 0.5)', controlsBg: '#ffffff', buttonBg: '#007bff', buttonHover: '#0056b3' },
-        'Deep Dark':      { pageBg: '#121212', canvas: '#1e1e1e', textColor: '#e0e0e0', lines: '#444444', notes: '#e0e0e0', playhead: '#ff4d4d', selection: 'rgba(255, 215, 0, 0.5)', controlsBg: '#2a2a2a', buttonBg: '#3e3e3e', buttonHover: '#555555' },
-        'Sepia':          { pageBg: '#f4f0e8', canvas: '#faf8f2', textColor: '#5a4d3a', lines: '#d3c0a5', notes: '#5a4d3a', playhead: '#c75c52', selection: 'rgba(218, 165, 32, 0.5)', controlsBg: '#e9e2d7', buttonBg: '#8c7a62', buttonHover: '#6b5c49' },
-        'Blueprint':      { pageBg: '#2a3f5a', canvas: '#3a506b', textColor: '#ffffff', lines: '#5a7d9a', notes: '#ffffff', playhead: '#ffcc00', selection: 'rgba(173, 216, 230, 0.5)', controlsBg: '#34495e', buttonBg: '#5a7d9a', buttonHover: '#4e6a85' },
-        'Forest':         { pageBg: '#2c3e32', canvas: '#3e5045', textColor: '#e8f5e9', lines: '#6a8a79', notes: '#e8f5e9', playhead: '#f9a825', selection: 'rgba(233, 175, 96, 0.6)', controlsBg: '#374c3d', buttonBg: '#6a8a79', buttonHover: '#5c7a6a' },
-        'Rose Quartz':    { pageBg: '#f7f2f6', canvas: '#ffffff', textColor: '#6d435a', lines: '#f2d8e7', notes: '#6d435a', playhead: '#e91e63', selection: 'rgba(255, 182, 193, 0.6)', controlsBg: '#fce4ec', buttonBg: '#c2185b', buttonHover: '#ad1457' },
-        'Neon Lights':    { pageBg: '#0d0221', canvas: '#261447', textColor: '#00ff87', lines: '#6a0dad', notes: '#ff00f1', playhead: '#00ff87', selection: 'rgba(108, 92, 231, 0.6)', controlsBg: '#261447', buttonBg: '#ff00f1', buttonHover: '#c700bf' },
-        'Noir':           { pageBg: '#1a1a1a', canvas: '#000000', textColor: '#ffffff', lines: '#333333', notes: '#ffffff', playhead: '#e50914', selection: 'rgba(200, 200, 200, 0.5)', controlsBg: '#101010', buttonBg: '#e50914', buttonHover: '#f40612' },
-        'Synthwave':      { pageBg: '#241940', canvas: '#1c1433', textColor: '#00d8ff', lines: '#5d4c86', notes: '#ff3f83', playhead: '#00d8ff', selection: 'rgba(255, 232, 105, 0.5)', controlsBg: '#2d2050', buttonBg: '#ff3f83', buttonHover: '#e63876' },
-        'Gold':           { pageBg: '#1f1f1f', canvas: '#2b2b2b', textColor: '#ffd700', lines: '#6e5c21', notes: '#ffd700', playhead: '#ffffff', selection: 'rgba(255, 215, 0, 0.4)', controlsBg: '#3c3c3c', buttonBg: '#b8860b', buttonHover: '#daa520' }
+        'Standard Light': { pageBg: '#f0f0f0', canvas: '#ffffff', textColor: '#000000', lines: '#cccccc', notes: '#000000', playhead: '#ff0000', selection: 'rgba(0, 123, 255, 0.4)', lasso: 'rgba(0, 123, 255, 0.2)', lassoBorder: 'rgba(0, 123, 255, 0.8)', controlsBg: '#ffffff', buttonBg: '#007bff', buttonHover: '#0056b3' },
+        'Deep Dark':      { pageBg: '#121212', canvas: '#1e1e1e', textColor: '#e0e0e0', lines: '#444444', notes: '#e0e0e0', playhead: '#ff4d4d', selection: 'rgba(70, 90, 255, 0.5)', lasso: 'rgba(70, 90, 255, 0.2)', lassoBorder: 'rgba(70, 90, 255, 0.8)', controlsBg: '#2a2a2a', buttonBg: '#3e3e3e', buttonHover: '#555555' },
+        'Sepia':          { pageBg: '#f4f0e8', canvas: '#faf8f2', textColor: '#5a4d3a', lines: '#d3c0a5', notes: '#5a4d3a', playhead: '#c75c52', selection: 'rgba(139, 105, 60, 0.5)', lasso: 'rgba(139, 105, 60, 0.2)', lassoBorder: 'rgba(139, 105, 60, 0.8)', controlsBg: '#e9e2d7', buttonBg: '#8c7a62', buttonHover: '#6b5c49' },
+        'Blueprint':      { pageBg: '#2a3f5a', canvas: '#3a506b', textColor: '#ffffff', lines: '#5a7d9a', notes: '#ffffff', playhead: '#ffcc00', selection: 'rgba(173, 216, 230, 0.5)', lasso: 'rgba(173, 216, 230, 0.2)', lassoBorder: 'rgba(173, 216, 230, 0.8)', controlsBg: '#34495e', buttonBg: '#5a7d9a', buttonHover: '#4e6a85' },
+        'Forest':         { pageBg: '#2c3e32', canvas: '#3e5045', textColor: '#e8f5e9', lines: '#6a8a79', notes: '#e8f5e9', playhead: '#f9a825', selection: 'rgba(233, 175, 96, 0.6)', lasso: 'rgba(233, 175, 96, 0.3)', lassoBorder: 'rgba(233, 175, 96, 0.8)', controlsBg: '#374c3d', buttonBg: '#6a8a79', buttonHover: '#5c7a6a' },
+        'Rose Quartz':    { pageBg: '#f7f2f6', canvas: '#ffffff', textColor: '#6d435a', lines: '#f2d8e7', notes: '#6d435a', playhead: '#e91e63', selection: 'rgba(255, 182, 193, 0.6)', lasso: 'rgba(255, 182, 193, 0.3)', lassoBorder: 'rgba(255, 182, 193, 0.8)', controlsBg: '#fce4ec', buttonBg: '#c2185b', buttonHover: '#ad1457' },
+        'Neon Lights':    { pageBg: '#0d0221', canvas: '#261447', textColor: '#00ff87', lines: '#6a0dad', notes: '#ff00f1', playhead: '#00ff87', selection: 'rgba(108, 92, 231, 0.6)', lasso: 'rgba(108, 92, 231, 0.3)', lassoBorder: 'rgba(108, 92, 231, 0.8)', controlsBg: '#261447', buttonBg: '#ff00f1', buttonHover: '#c700bf' },
+        'Noir':           { pageBg: '#1a1a1a', canvas: '#000000', textColor: '#ffffff', lines: '#333333', notes: '#ffffff', playhead: '#e50914', selection: 'rgba(200, 200, 200, 0.5)', lasso: 'rgba(200, 200, 200, 0.2)', lassoBorder: 'rgba(200, 200, 200, 0.8)', controlsBg: '#101010', buttonBg: '#e50914', buttonHover: '#f40612' },
+        'Synthwave':      { pageBg: '#241940', canvas: '#1c1433', textColor: '#00d8ff', lines: '#5d4c86', notes: '#ff3f83', playhead: '#00d8ff', selection: 'rgba(255, 232, 105, 0.5)', lasso: 'rgba(255, 232, 105, 0.2)', lassoBorder: 'rgba(255, 232, 105, 0.8)', controlsBg: '#2d2050', buttonBg: '#ff3f83', buttonHover: '#e63876' },
+        'Gold':           { pageBg: '#1f1f1f', canvas: '#2b2b2b', textColor: '#ffd700', lines: '#6e5c21', notes: '#ffd700', playhead: '#ffffff', selection: 'rgba(255, 215, 0, 0.4)', lasso: 'rgba(255, 215, 0, 0.2)', lassoBorder: 'rgba(255, 215, 0, 0.8)', controlsBg: '#3c3c3c', buttonBg: '#b8860b', buttonHover: '#daa520' }
     };
     let currentTheme = THEMES['Standard Light'];
 
     // --- DOM Element References ---
     const playBtn = document.getElementById('playBtn');
+    const repeatBtn = document.getElementById('repeatBtn');
     const tempoInput = document.getElementById('tempo');
     const vZoomSlider = document.getElementById('vZoom');
     const hZoomSlider = document.getElementById('hZoom');
     const totalBeatsInput = document.getElementById('totalBeats');
+    const barLinesInput = document.getElementById('barLinesInput');
     const volumeSlider = document.getElementById('volume');
     const themeSelect = document.getElementById('themeSelect');
     const edo12SnapBtn = document.getElementById('edo12SnapBtn');
@@ -470,6 +502,8 @@
     const applyModalBtn = document.getElementById('apply-modal-changes');
     const modalNoteLengthSelect = document.getElementById('modal-note-length-select');
     const modalPlayLengthInput = document.getElementById('modal-play-length');
+    const bulkAdjustControls = document.getElementById('bulkAdjustControls');
+    const applyBulkAdjustBtn = document.getElementById('applyBulkAdjustBtn');
 
     const noteStyleSelect = document.getElementById('noteStyleSelect');
     const accidentalModeSelect = document.getElementById('accidentalModeSelect');
@@ -527,6 +561,7 @@
         updateSnapButtons();
         updateDisplayToggleButtons();
         updateCanvasWidth();
+        updateAdjustmentPanelVisibility();
 
         applyTheme(themeSelect.value);
         setupAudio();
@@ -663,13 +698,29 @@
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         canvas.style.backgroundColor = currentTheme.canvas;
+        const totalBeats = parseInt(totalBeatsInput.value, 10);
+        const barLinesValue = parseInt(barLinesInput.value, 10);
 
         // Draw beat snap grid
         if (isBeatSnapOn) {
             ctx.strokeStyle = currentTheme.lines + '80';
             ctx.lineWidth = 1;
             const subdivisionWidth = (PIXELS_PER_BEAT / BEAT_SNAP_SUBDIVISION) * horizontalZoom;
-            for (let x = 0; x < canvas.width; x += subdivisionWidth) {
+            for (let x = START_BEAT * PIXELS_PER_BEAT * horizontalZoom; x < canvas.width; x += subdivisionWidth) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+        }
+
+        // Draw bar lines
+        if (barLinesValue > 0) {
+            ctx.strokeStyle = currentTheme.notes + '99'; // MODIFIED: Darker, semi-transparent bar lines
+            ctx.lineWidth = 1;
+            // Loop until the second to last bar, to not draw over the final bar line
+            for (let beat = START_BEAT + barLinesValue; beat < START_BEAT + totalBeats; beat += barLinesValue) {
+                const x = beat * PIXELS_PER_BEAT * horizontalZoom;
                 ctx.beginPath();
                 ctx.moveTo(x, 0);
                 ctx.lineTo(x, canvas.height);
@@ -687,6 +738,26 @@
             ctx.lineTo(canvas.width, y);
             ctx.stroke();
         });
+
+        // Draw final bar lines
+        ctx.strokeStyle = currentTheme.notes; // MODIFIED: Darker end lines
+        const lastBeatX = (START_BEAT + totalBeats) * PIXELS_PER_BEAT * horizontalZoom;
+        
+        // Draw the last beat line
+        ctx.lineWidth = 2; // MODIFIED: Slightly thicker line
+        ctx.beginPath();
+        ctx.moveTo(lastBeatX, 0);
+        ctx.lineTo(lastBeatX, canvas.height);
+        ctx.stroke();
+
+        // Draw the thick final line
+        ctx.lineWidth = 5; // MODIFIED: Thicker end line
+        const endLineX = (START_BEAT + totalBeats + 0.1) * PIXELS_PER_BEAT * horizontalZoom;
+        ctx.beginPath();
+        ctx.moveTo(endLineX, 0);
+        ctx.lineTo(endLineX, canvas.height);
+        ctx.stroke();
+
 
         // Draw clefs
         const G4_Y = frequencyToY(392.00);
@@ -706,9 +777,10 @@
         circles.forEach(circle => {
             const x = circle.relativeX * PIXELS_PER_BEAT * horizontalZoom;
             const y = frequencyToY(circle.frequency);
+            const isSelected = selectedCircles.includes(circle);
 
             // 1. Draw Selection Highlight
-            if (circle === selectedCircle) {
+            if (isSelected) {
                 ctx.fillStyle = currentTheme.selection;
                 ctx.beginPath();
                 ctx.arc(x, y, circleRadius + 4, 0, Math.PI * 2);
@@ -811,6 +883,16 @@
             }
         });
 
+        // --- Draw Lasso ---
+        if (isLassoing) {
+            ctx.fillStyle = currentTheme.lasso;
+            ctx.strokeStyle = currentTheme.lassoBorder;
+            ctx.lineWidth = 1;
+            const rect = getLassoRect();
+            ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+            ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+        }
+
         // --- Draw Playhead ---
         ctx.beginPath();
         ctx.moveTo(playheadPosition, 0);
@@ -826,14 +908,22 @@
         const deltaTime = timestamp - (lastTime || timestamp);
         lastTime = timestamp;
         const pixelsPerSecond = (tempo / 60) * PIXELS_PER_BEAT * horizontalZoom;
+        const totalBeats = parseInt(totalBeatsInput.value, 10);
+        const endPosition = (START_BEAT + totalBeats) * PIXELS_PER_BEAT * horizontalZoom;
+        
         playheadPosition += (pixelsPerSecond * deltaTime) / 1000;
         
-        if (playheadPosition >= canvas.width) {
-            isPlaying = false;
-            playBtn.textContent = 'Play';
-            playheadPosition = canvas.width;
-            draw();
-            return;
+        if (playheadPosition >= endPosition) {
+            if (isRepeatOn) {
+                playheadPosition = START_BEAT * PIXELS_PER_BEAT;
+                lastTime = performance.now(); // Reset time to avoid jump
+            } else {
+                isPlaying = false;
+                playBtn.textContent = 'Play';
+                playheadPosition = START_BEAT * PIXELS_PER_BEAT;
+                draw();
+                return;
+            }
         }
 
         circles.forEach(circle => {
@@ -856,6 +946,7 @@
     // --- Event Listeners Setup ---
     function addEventListeners() {
         playBtn.addEventListener('click', togglePlay);
+        repeatBtn.addEventListener('click', toggleRepeat);
         collapseBtn.addEventListener('click', () => {
             const isVisible = controlsContent.style.display !== 'none';
             controlsContent.style.display = isVisible ? 'none' : 'block';
@@ -866,8 +957,8 @@
         vZoomSlider.addEventListener('input', e => { verticalZoom = parseFloat(e.target.value); draw(); });
         hZoomSlider.addEventListener('input', handleHorizontalZoom);
         totalBeatsInput.addEventListener('change', handleBeatsInputChange);
+        barLinesInput.addEventListener('change', draw);
         
-        // MODIFIED: Added event listener for the theme select dropdown
         themeSelect.addEventListener('change', e => applyTheme(e.target.value));
 
         edo12SnapBtn.addEventListener('click', () => handleEdoSnap(12));
@@ -923,14 +1014,17 @@
             }
             if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); togglePlay(); }
 
-            if (selectedCircle) {
-                if(e.key === 'q') cycleNoteLength(selectedCircle);
+            if (selectedCircles.length > 0) {
+                if(e.key === 'q') {
+                    selectedCircles.forEach(c => cycleNoteLength(c));
+                    draw();
+                }
                 if(e.key === '=' || e.key === '+') {
-                    selectedCircle.velocity = Math.min(127, selectedCircle.velocity + 5);
+                    selectedCircles.forEach(c => c.velocity = Math.min(127, c.velocity + 5));
                     draw();
                 }
                 if(e.key === '-') {
-                    selectedCircle.velocity = Math.max(0, selectedCircle.velocity - 5);
+                     selectedCircles.forEach(c => c.velocity = Math.max(0, c.velocity - 5));
                     draw();
                 }
             }
@@ -963,6 +1057,7 @@
 
         closeModalBtn.addEventListener('click', () => modal.style.display = 'none');
         applyModalBtn.addEventListener('click', applyModalChanges);
+        applyBulkAdjustBtn.addEventListener('click', applyBulkAdjustment);
         
         modalNoteLengthSelect.addEventListener('change', updatePlayLengthFromModalSelect);
         modalPlayLengthInput.addEventListener('input', updateModalSelectFromPlayLength);
@@ -1038,13 +1133,13 @@
         const pos = getEventPos(e);
 
         if (pos.x < START_BEAT * PIXELS_PER_BEAT * horizontalZoom) {
-            selectedCircle = null;
+            if (!e.shiftKey) selectedCircles = [];
+            updateAdjustmentPanelVisibility();
             draw();
             return;
         }
 
         const clickedCircle = getCircleAtPos(pos);
-        selectedCircle = clickedCircle ? clickedCircle : null;
         
         if (currentMode === 'insert') {
             if (!clickedCircle) addCircle(pos);
@@ -1055,47 +1150,93 @@
         } else if (currentMode === 'adjust') {
             if (clickedCircle) {
                 isDragging = true;
-                dragOffsetX = (selectedCircle.relativeX * PIXELS_PER_BEAT * horizontalZoom) - pos.x;
+                if (!selectedCircles.includes(clickedCircle)) {
+                     if (!e.shiftKey) selectedCircles = [clickedCircle];
+                     else selectedCircles.push(clickedCircle);
+                }
+                dragOffsetX = (clickedCircle.relativeX * PIXELS_PER_BEAT * horizontalZoom) - pos.x;
+            } else {
+                 isLassoing = true;
+                 if (!e.shiftKey) selectedCircles = [];
+                 lassoStartPos = pos;
+                 lassoEndPos = pos;
             }
         } else if (currentMode === 'edit') {
             if (clickedCircle) openModal(clickedCircle);
         } else if (currentMode === 'move_playhead') {
             playheadPosition = Math.max(START_BEAT * PIXELS_PER_BEAT, pos.x);
         }
+
+        if (currentMode !== 'adjust') {
+            if (clickedCircle) {
+                if (!e.shiftKey) selectedCircles = [clickedCircle];
+                else if (!selectedCircles.includes(clickedCircle)) selectedCircles.push(clickedCircle);
+            } else {
+                 if (!e.shiftKey) selectedCircles = [];
+            }
+        }
+        
+        updateAdjustmentPanelVisibility();
         draw();
     }
 
     function handleMouseMove(e) {
         const pos = getEventPos(e);
         const circleUnderMouse = getCircleAtPos(pos);
+
+        if (isLassoing) {
+            lassoEndPos = pos;
+            draw();
+            return;
+        }
+
         if (currentMode === 'delete' && circleUnderMouse) canvas.style.cursor = 'crosshair';
-        else if (currentMode === 'adjust' && circleUnderMouse) canvas.style.cursor = 'move';
+        else if (currentMode === 'adjust' && (isDragging || circleUnderMouse)) canvas.style.cursor = 'move';
         else if (currentMode === 'edit' && circleUnderMouse) canvas.style.cursor = 'pointer';
         else if (currentMode === 'move_playhead') canvas.style.cursor = 'e-resize';
         else canvas.style.cursor = 'default';
 
-        if (isDragging && selectedCircle) {
-            let newRelativeX = (pos.x + dragOffsetX) / (PIXELS_PER_BEAT * horizontalZoom);
-            const maxBeat = START_BEAT + parseInt(totalBeatsInput.value, 10);
-            newRelativeX = Math.min(maxBeat, Math.max(START_BEAT, newRelativeX)); // Clamp within bounds
+        if (isDragging && selectedCircles.length > 0) {
+            const firstCircle = selectedCircles[0];
+            let newFirstCircleX = (pos.x + dragOffsetX) / (PIXELS_PER_BEAT * horizontalZoom);
 
             if (isBeatSnapOn) {
-                newRelativeX = Math.round(newRelativeX * BEAT_SNAP_SUBDIVISION) / BEAT_SNAP_SUBDIVISION;
+                newFirstCircleX = Math.round(newFirstCircleX * BEAT_SNAP_SUBDIVISION) / BEAT_SNAP_SUBDIVISION;
             }
-            selectedCircle.relativeX = newRelativeX;
-            selectedCircle.frequency = yToFrequency(pos.y);
+
+            const deltaX = newFirstCircleX - firstCircle.relativeX;
+            const deltaY = pos.y - frequencyToY(firstCircle.frequency);
+            
+            selectedCircles.forEach(circle => {
+                const maxBeat = START_BEAT + parseInt(totalBeatsInput.value, 10);
+                circle.relativeX = Math.min(maxBeat, Math.max(START_BEAT, circle.relativeX + deltaX));
+                
+                const newY = frequencyToY(circle.frequency) + deltaY;
+                circle.frequency = yToFrequency(newY);
+            });
             draw();
         }
     }
 
-    function handleMouseUp() { if (isDragging) { isDragging = false; } }
+    function handleMouseUp(e) { 
+        if (isLassoing) {
+            isLassoing = false;
+            selectCirclesInLasso();
+            updateAdjustmentPanelVisibility();
+            draw();
+        }
+        if (isDragging) { 
+            isDragging = false; 
+        } 
+    }
     
     function handleClearAll() {
         if (confirm("Do you really want to clear all the notes?")) {
             circles = [];
+            selectedCircles = [];
             circleCounter = 0;
-            selectedCircle = null;
             playheadPosition = START_BEAT * PIXELS_PER_BEAT;
+            updateAdjustmentPanelVisibility();
             draw();
         }
     }
@@ -1132,7 +1273,7 @@
     
     function updateCanvasWidth() {
         const totalBeats = parseInt(totalBeatsInput.value, 10) || 16;
-        const calculatedWidth = (totalBeats + START_BEAT) * PIXELS_PER_BEAT * horizontalZoom;
+        const calculatedWidth = (totalBeats + START_BEAT + 2) * PIXELS_PER_BEAT * horizontalZoom; // Add extra for end bar
         canvas.width = Math.max(canvasContainer.clientWidth, calculatedWidth);
     }
     
@@ -1142,7 +1283,9 @@
         isPlaying = !isPlaying;
         if (isPlaying) {
             playBtn.textContent = 'Pause';
-            if (playheadPosition >= canvas.width) {
+            const totalBeats = parseInt(totalBeatsInput.value, 10);
+            const endPosition = (START_BEAT + totalBeats) * PIXELS_PER_BEAT * horizontalZoom;
+            if (playheadPosition >= endPosition) {
                 playheadPosition = START_BEAT * PIXELS_PER_BEAT;
             }
             lastTime = performance.now();
@@ -1150,6 +1293,12 @@
         } else {
             playBtn.textContent = 'Play';
         }
+    }
+
+    function toggleRepeat() {
+        isRepeatOn = !isRepeatOn;
+        repeatBtn.textContent = `Repeat: ${isRepeatOn ? 'On' : 'Off'}`;
+        repeatBtn.classList.toggle('toggled', isRepeatOn);
     }
     
     function handleEdoSnap(edoValue) {
@@ -1183,6 +1332,10 @@
         isScaleSnapOn = false;
     }
     
+    function updateAdjustmentPanelVisibility() {
+        bulkAdjustControls.style.display = selectedCircles.length > 0 ? 'block' : 'none';
+    }
+
     function updateDisplayToggleButtons() {
         displayNoteNameBtn.textContent = `Note Name: ${isDisplayingNoteName ? 'On' : 'Off'}`;
         displayNoteNameBtn.classList.toggle('toggled', isDisplayingNoteName);
@@ -1298,13 +1451,16 @@
     }
 
     function deleteCircle(circleToDelete) {
-        if (selectedCircle === circleToDelete) selectedCircle = null;
+        selectedCircles = selectedCircles.filter(c => c.id !== circleToDelete.id);
         circles = circles.filter(c => c.id !== circleToDelete.id);
+        updateAdjustmentPanelVisibility();
         draw();
     }
 
     function openModal(circle) {
-        selectedCircle = circle;
+        if (selectedCircles.length !== 1) {
+            selectedCircles = [circle];
+        }
         modal.style.display = 'block';
         document.getElementById('modal-note-number').textContent = circle.id;
         document.getElementById('modal-horizontal-pos').value = (circle.relativeX - START_BEAT).toFixed(2);
@@ -1349,7 +1505,8 @@
 
 
     function applyModalChanges() {
-        if (!selectedCircle) return;
+        if (selectedCircles.length !== 1) return;
+        const selectedCircle = selectedCircles[0];
 
         const hPosInput = document.getElementById('modal-horizontal-pos');
         const velocityInput = document.getElementById('modal-velocity');
@@ -1409,13 +1566,39 @@
              selectedCircle.frequency = targetFreq;
         }
         
-        document.getElementById('modal-horizontal-pos').value = (selectedCircle.relativeX - START_BEAT).toFixed(2);
-        document.getElementById('modal-frequency').value = selectedCircle.frequency.toFixed(4);
-        modalPlayLengthInput.value = selectedCircle.playLength.toFixed(2);
-        document.getElementById('modal-velocity').value = selectedCircle.velocity;
-        document.getElementById('modal-base-note').value = '';
-        document.getElementById('modal-relative-interval').value = '';
-        
+        modal.style.display = 'none';
+        draw();
+    }
+
+    function applyBulkAdjustment() {
+        const hMove = parseFloat(document.getElementById('bulkHMove').value);
+        const vMove = parseInt(document.getElementById('bulkVMove').value, 10);
+
+        if (isNaN(hMove) || isNaN(vMove)) {
+            alert("Invalid input for adjustment.");
+            return;
+        }
+
+        const maxBeat = START_BEAT + parseInt(totalBeatsInput.value, 10);
+
+        selectedCircles.forEach(circle => {
+            // Horizontal adjustment
+            let newHPos = circle.relativeX + hMove;
+            newHPos = Math.max(START_BEAT, Math.min(maxBeat, newHPos));
+            circle.relativeX = newHPos;
+
+            // Vertical adjustment
+            if (vMove !== 0) {
+                const currentMidi = frequencyToMidiNote(circle.frequency);
+                const newMidi = currentMidi + vMove;
+                circle.frequency = midiNoteToFrequency(newMidi);
+            }
+        });
+
+        // Reset inputs
+        document.getElementById('bulkHMove').value = 0;
+        document.getElementById('bulkVMove').value = 0;
+
         draw();
     }
     
@@ -1520,19 +1703,36 @@
     }
 
     function getCircleAtPos(pos) {
-        let closestCircle = null;
-        let minDistance = Infinity;
-        circles.forEach(circle => {
+        // Search backwards so we get the top-most circle first
+        for (let i = circles.length - 1; i >= 0; i--) {
+            const circle = circles[i];
             const x = circle.relativeX * PIXELS_PER_BEAT * horizontalZoom;
             const y = frequencyToY(circle.frequency);
             const distance = Math.sqrt((pos.x - x) ** 2 + (pos.y - y) ** 2);
-            if (distance < minDistance) {
-                minDistance = distance;
-                closestCircle = circle;
+            if (distance < circleRadius + 4) return circle;
+        }
+        return null;
+    }
+    
+    function getLassoRect() {
+        const x = Math.min(lassoStartPos.x, lassoEndPos.x);
+        const y = Math.min(lassoStartPos.y, lassoEndPos.y);
+        const w = Math.abs(lassoStartPos.x - lassoEndPos.x);
+        const h = Math.abs(lassoStartPos.y - lassoEndPos.y);
+        return { x, y, w, h };
+    }
+
+    function selectCirclesInLasso() {
+        const rect = getLassoRect();
+        const newlySelected = [];
+        circles.forEach(circle => {
+            const x = circle.relativeX * PIXELS_PER_BEAT * horizontalZoom;
+            const y = frequencyToY(circle.frequency);
+            if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
+                newlySelected.push(circle);
             }
         });
-        if (minDistance < circleRadius + 4) return closestCircle;
-        return null;
+        selectedCircles.push(...newlySelected.filter(c => !selectedCircles.includes(c)));
     }
     
     function cycleNoteLength(note) {
@@ -1547,8 +1747,6 @@
         const nextIndex = (currentIndex + 1) % NOTE_DURATIONS_IN_BEATS.length;
         const newLengthInBeats = NOTE_DURATIONS_IN_BEATS[nextIndex];
         note.playLength = (newLengthInBeats * 60) / tempo;
-        
-        draw();
     }
 
     function getNoteValueImage(playLength, tempo) {
