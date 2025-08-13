@@ -88,8 +88,8 @@
         transition: background-color 0.2s ease;
     }
     #playBtn {
-        padding: 12px 20px;
-        font-size: 18px;
+        padding: 16px 28px;
+        font-size: 22px;
     }
     #controls button:hover {
         background-color: var(--button-hover-bg);
@@ -297,6 +297,8 @@
              <br><br>
             <button id="saveMidiBtn" class="secondary">Save to Midi</button>
             <button id="loadMidiBtn" class="secondary">Load from Midi</button>
+            <button id="saveJpgBtn" class="secondary">Save to JPG</button>
+            <button id="saveWavBtn" class="secondary">Save to WAV</button>
             <input type="file" id="midiFileInput" accept=".mid,.midi" style="display: none;">
         </div>
         <div class="control-group">
@@ -412,7 +414,7 @@
     
     // --- Musical Constants ---
     const PIXELS_PER_BEAT = 50;
-    const START_BEAT = 3; 
+    var START_BEAT = 3; 
     const BEAT_SNAP_SUBDIVISION = 4;
     const circleRadius = 10;
     const trebleClefFrequencies = [698.46, 587.33, 493.88, 392.00, 329.63];
@@ -486,6 +488,8 @@
     const saveMidiBtn = document.getElementById('saveMidiBtn');
     const loadMidiBtn = document.getElementById('loadMidiBtn');
     const midiFileInput = document.getElementById('midiFileInput');
+    const saveJpgBtn = document.getElementById('saveJpgBtn');
+    const saveWavBtn = document.getElementById('saveWavBtn');
     const reverbBtn = document.getElementById('reverbBtn');
     const reverbAmountSlider = document.getElementById('reverbAmount');
     const delayBtn = document.getElementById('delayBtn');
@@ -1054,6 +1058,11 @@
                 await importFromMidiFile(e.target.files[0], onMidiImportSuccess);
             }
         });
+        
+        // Connect new buttons to their functions
+        setupJpgExport(saveJpgBtn, canvas, () => currentTheme.canvas);
+        setupWavExport(saveWavBtn, () => ({ circles, tempo, baseFrequency, roundRobinBuffers }));
+
 
         closeModalBtn.addEventListener('click', () => modal.style.display = 'none');
         applyModalBtn.addEventListener('click', applyModalChanges);
@@ -1815,5 +1824,7 @@
 </script>
 
 <script src="midi_functions.js" defer></script>
+<script src="saveToJPG.js"></script>
+<script src="saveToWAV.js"></script>
 </body>
 </html>
